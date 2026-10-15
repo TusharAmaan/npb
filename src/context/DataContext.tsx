@@ -327,6 +327,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // Safe Firestore write helper: recursively sanitizes data to remove any `undefined` values.
+  // Firestore Web SDK throws "Unsupported field value: undefined" if any object property is undefined.
+  const firestoreSet = async (docRef: any, data: any) => {
+    const sanitized = JSON.parse(JSON.stringify(data));
+    return await setDoc(docRef, sanitized);
+  };
+
   // --- Push All Data Engine to Cloud Firestore ---
   const pushAllDataToFirestore = async (): Promise<{ success: boolean; count: number; error?: string }> => {
     if (!isFirebaseConfigured || !db) {
@@ -346,69 +353,69 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // 1. Batches
       for (const batch of batches) {
-        await setDoc(doc(db, 'batches', batch.id), batch);
+        await firestoreSet(doc(db, 'batches', batch.id), batch);
         count++;
       }
 
       // 2. Schools
       for (const school of schools) {
-        await setDoc(doc(db, 'schools', school.id), school);
+        await firestoreSet(doc(db, 'schools', school.id), school);
         count++;
       }
 
       // 3. Students
       for (const student of students) {
-        await setDoc(doc(db, 'students', student.id), student);
+        await firestoreSet(doc(db, 'students', student.id), student);
         count++;
       }
 
       // 4. Student Syllabi
       for (const [studentId, syl] of Object.entries(syllabi)) {
-        await setDoc(doc(db, 'studentSyllabi', studentId), syl);
+        await firestoreSet(doc(db, 'studentSyllabi', studentId), syl);
         count++;
       }
 
       // 5. Class Sessions
       for (const session of sessions) {
-        await setDoc(doc(db, 'classSessions', session.id), session);
+        await firestoreSet(doc(db, 'classSessions', session.id), session);
         count++;
       }
 
       // 6. Homeworks
       for (const hw of homeworks) {
-        await setDoc(doc(db, 'homeworks', hw.id), hw);
+        await firestoreSet(doc(db, 'homeworks', hw.id), hw);
         count++;
       }
 
       // 7. Exams
       for (const exam of exams) {
-        await setDoc(doc(db, 'exams', exam.id), exam);
+        await firestoreSet(doc(db, 'exams', exam.id), exam);
         count++;
       }
 
       // 8. Lecture Sheets
       for (const sheet of sheets) {
-        await setDoc(doc(db, 'lectureSheets', sheet.id), sheet);
+        await firestoreSet(doc(db, 'lectureSheets', sheet.id), sheet);
         count++;
       }
 
       // 9. Bonus Logs
       for (const log of bonusLogs) {
-        await setDoc(doc(db, 'bonusLogs', log.id), log);
+        await firestoreSet(doc(db, 'bonusLogs', log.id), log);
         count++;
       }
 
       // 10. Global Settings
-      await setDoc(doc(db, 'settings', 'global'), settings);
+      await firestoreSet(doc(db, 'settings', 'global'), settings);
       count++;
 
       // 11. Syllabus Schemes
       for (const scheme of syllabusSchemes) {
-        await setDoc(doc(db, 'syllabusSchemes', scheme.id), scheme);
+        await firestoreSet(doc(db, 'syllabusSchemes', scheme.id), scheme);
         count++;
       }
 
-      const successMsg = `Successfully pushed ${count} documents across 11 collections to Cloud Firestore! Refresh Firebase Console to view tables.`;
+      const successMsg = `Successfully pushed ${count} documents across all 11 collections to Cloud Firestore! Refresh Firebase Console to view tables.`;
       console.log(`[NPB Firebase] ${successMsg}`);
       setLastCloudSyncStatus({ status: 'success', message: successMsg, timestamp: Date.now() });
       return { success: true, count };
@@ -454,7 +461,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'batches', batch.id), batch);
+        await firestoreSet(doc(db, 'batches', batch.id), batch);
       } catch (err: any) {
         console.warn('[NPB Firestore saveBatch]:', err.message);
       }
@@ -479,7 +486,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'schools', school.id), school);
+        await firestoreSet(doc(db, 'schools', school.id), school);
       } catch (err: any) {
         console.warn('[NPB Firestore saveSchool]:', err.message);
       }
@@ -504,7 +511,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'students', student.id), student);
+        await firestoreSet(doc(db, 'students', student.id), student);
       } catch (err: any) {
         console.warn('[NPB Firestore saveStudent]:', err.message);
       }
@@ -534,7 +541,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }));
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'studentSyllabi', studentId), updated);
+        await firestoreSet(doc(db, 'studentSyllabi', studentId), updated);
       } catch (err: any) {
         console.warn('[NPB Firestore saveStudentSyllabus]:', err.message);
       }
@@ -568,7 +575,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'classSessions', session.id), session);
+        await firestoreSet(doc(db, 'classSessions', session.id), session);
       } catch (err: any) {
         console.warn('[NPB Firestore saveClassSession]:', err.message);
       }
@@ -618,7 +625,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           if (isFirebaseConfigured && db) {
             try {
-              setDoc(doc(db, 'studentSyllabi', stuId), updatedSyllabi[stuId]);
+              firestoreSet(doc(db, 'studentSyllabi', stuId), updatedSyllabi[stuId]);
             } catch (err: any) {
               console.warn('[NPB Firestore sync syllabus]:', err.message);
             }
@@ -657,7 +664,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const updatedSch = { ...sch, topics: updatedTopics, updatedAt: Date.now() };
             if (isFirebaseConfigured && db) {
               try {
-                setDoc(doc(db, 'syllabusSchemes', sch.id), updatedSch);
+                firestoreSet(doc(db, 'syllabusSchemes', sch.id), updatedSch);
               } catch (err: any) {
                 console.warn('[NPB Firestore sync scheme topic]:', err.message);
               }
@@ -732,7 +739,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (isFirebaseConfigured && db) {
         try {
-          await setDoc(doc(db, 'exams', examId), generatedExam);
+          await firestoreSet(doc(db, 'exams', examId), generatedExam);
         } catch (err: any) {
           console.warn('[NPB Firestore quiz sync]:', err.message);
         }
@@ -763,7 +770,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (isFirebaseConfigured && db) {
         try {
-          await setDoc(doc(db, 'homeworks', hwId), generatedHw);
+          await firestoreSet(doc(db, 'homeworks', hwId), generatedHw);
         } catch (err: any) {
           console.warn('[NPB Firestore homework sync]:', err.message);
         }
@@ -785,7 +792,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const updatedSheet = { ...sh, receivedByStudentIds: combined };
               if (isFirebaseConfigured && db) {
                 try {
-                  setDoc(doc(db, 'lectureSheets', sh.id), updatedSheet);
+                  firestoreSet(doc(db, 'lectureSheets', sh.id), updatedSheet);
                 } catch (err: any) {
                   console.warn('[NPB Firestore sheet sync]:', err.message);
                 }
@@ -817,7 +824,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'homeworks', homework.id), homework);
+        await firestoreSet(doc(db, 'homeworks', homework.id), homework);
       } catch (err: any) {
         console.warn('[NPB Firestore saveHomework]:', err.message);
       }
@@ -850,7 +857,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const updatedHw = { ...h, submissions: newSubmissions };
         if (isFirebaseConfigured && db) {
           try {
-            setDoc(doc(db, 'homeworks', h.id), updatedHw);
+            firestoreSet(doc(db, 'homeworks', h.id), updatedHw);
           } catch (err: any) {
             console.warn('[NPB Firestore saveHomeworkSubmission]:', err.message);
           }
@@ -868,7 +875,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'exams', exam.id), exam);
+        await firestoreSet(doc(db, 'exams', exam.id), exam);
       } catch (err: any) {
         console.warn('[NPB Firestore saveExam]:', err.message);
       }
@@ -917,7 +924,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           if (isFirebaseConfigured && db) {
             try {
-              setDoc(doc(db, 'studentSyllabi', studentId), updatedSyllabi[studentId]);
+              firestoreSet(doc(db, 'studentSyllabi', studentId), updatedSyllabi[studentId]);
             } catch (err: any) {
               console.warn('[NPB Firestore sync exam syllabus]:', err.message);
             }
@@ -966,7 +973,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const updatedSch = { ...sch, topics: updatedTopics, updatedAt: Date.now() };
             if (isFirebaseConfigured && db) {
               try {
-                setDoc(doc(db, 'syllabusSchemes', sch.id), updatedSch);
+                firestoreSet(doc(db, 'syllabusSchemes', sch.id), updatedSch);
               } catch (err: any) {
                 console.warn('[NPB Firestore sync exam scheme]:', err.message);
               }
@@ -997,7 +1004,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'lectureSheets', sheet.id), sheet);
+        await firestoreSet(doc(db, 'lectureSheets', sheet.id), sheet);
       } catch (err: any) {
         console.warn('[NPB Firestore saveLectureSheet]:', err.message);
       }
@@ -1016,7 +1023,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const updatedSheet = { ...sh, receivedByStudentIds: updated };
         if (isFirebaseConfigured && db) {
           try {
-            setDoc(doc(db, 'lectureSheets', sh.id), updatedSheet);
+            firestoreSet(doc(db, 'lectureSheets', sh.id), updatedSheet);
           } catch (err: any) {
             console.warn('[NPB Firestore toggleSheetDistributed]:', err.message);
           }
@@ -1048,7 +1055,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'bonusLogs', log.id), log);
+        await firestoreSet(doc(db, 'bonusLogs', log.id), log);
       } catch (err: any) {
         console.warn('[NPB Firestore saveBonusLog]:', err.message);
       }
@@ -1081,7 +1088,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const merged = { ...prev, ...newSettings };
       if (isFirebaseConfigured && db) {
         try {
-          setDoc(doc(db, 'settings', 'global'), merged);
+          firestoreSet(doc(db, 'settings', 'global'), merged);
         } catch (err: any) {
           console.warn('[NPB Firestore updateSettings]:', err.message);
         }
@@ -1097,7 +1104,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     if (isFirebaseConfigured && db) {
       try {
-        await setDoc(doc(db, 'syllabusSchemes', scheme.id), scheme);
+        await firestoreSet(doc(db, 'syllabusSchemes', scheme.id), scheme);
       } catch (err: any) {
         console.warn('[NPB Firestore saveSyllabusScheme]:', err.message);
       }
@@ -1167,7 +1174,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (isFirebaseConfigured && db) {
         try {
-          await setDoc(doc(db, 'studentSyllabi', stu.id), updatedSyllabi[stu.id]);
+          await firestoreSet(doc(db, 'studentSyllabi', stu.id), updatedSyllabi[stu.id]);
         } catch (err: any) {
           console.warn('[NPB Firestore sync scheme to student syllabus]:', err.message);
         }
