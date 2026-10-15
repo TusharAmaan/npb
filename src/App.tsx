@@ -19,6 +19,7 @@ import { MobileBottomNav } from './components/common/MobileBottomNav';
 import { HomeLandingView } from './components/home/HomeLandingView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { BatchList } from './components/batches/BatchList';
+import { SchoolDirectory } from './components/schools/SchoolDirectory';
 import { StudentDirectory } from './components/students/StudentDirectory';
 import { LiveClassSession } from './components/live-class/LiveClassSession';
 import { HomeworkManager } from './components/homework/HomeworkManager';
@@ -86,7 +87,9 @@ export function App() {
                   <Route index element={<Navigate to="/admin/dashboard" replace />} />
                   <Route path="dashboard" element={<DashboardView />} />
                   <Route path="live-class" element={<LiveClassSession />} />
+                  <Route path="records" element={<LiveClassSession defaultTab="records" />} />
                   <Route path="batches" element={<BatchList />} />
+                  <Route path="schools" element={<SchoolDirectory />} />
                   <Route path="students" element={<StudentDirectory />} />
                   <Route path="homework" element={<HomeworkManager />} />
                   <Route path="exams" element={<ExamManager />} />

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 export const StudentDirectory: React.FC = () => {
-  const { students, batches, schools, saveStudent, deleteStudent } = useData();
+  const { students, batches, schools, saveStudent, deleteStudent, saveSchool } = useData();
   const { confirm } = useModal();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -31,6 +31,11 @@ export const StudentDirectory: React.FC = () => {
   const [filterSchoolId, setFilterSchoolId] = useState('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(searchParams.get('action') === 'new');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Quick Add School in Modal
+  const [isQuickAddSchoolOpen, setIsQuickAddSchoolOpen] = useState(false);
+  const [quickSchoolName, setQuickSchoolName] = useState('');
+  const [quickSchoolCode, setQuickSchoolCode] = useState('');
 
   // New Student Form State
   const [newName, setNewName] = useState('');
@@ -398,9 +403,19 @@ export const StudentDirectory: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    School / Institution
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      School / Institution
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsQuickAddSchoolOpen(!isQuickAddSchoolOpen)}
+                      className="text-[11px] font-bold text-light-indigo dark:text-spiro-disco-ball hover:underline flex items-center gap-0.5"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Add New</span>
+                    </button>
+                  </div>
                   <select
                     value={newSchoolId}
                     onChange={(e) => setNewSchoolId(e.target.value)}
@@ -412,6 +427,51 @@ export const StudentDirectory: React.FC = () => {
                       </option>
                     ))}
                   </select>
+
+                  {/* Inline Quick Add Institution */}
+                  {isQuickAddSchoolOpen && (
+                    <div className="mt-2 p-2.5 rounded-xl border border-light-indigo/30 bg-light-indigo/5 dark:bg-slate-800/80 space-y-2 animate-in fade-in duration-150">
+                      <div className="text-[11px] font-black text-light-indigo dark:text-spiro-disco-ball">
+                        Quick Add New Institution
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Full Name (e.g. Notre Dame College)"
+                        value={quickSchoolName}
+                        onChange={(e) => setQuickSchoolName(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface text-slate-900 dark:text-white"
+                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Acronym (e.g. NDC)"
+                          value={quickSchoolCode}
+                          onChange={(e) => setQuickSchoolCode(e.target.value.toUpperCase())}
+                          className="w-24 px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface text-slate-900 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!quickSchoolName.trim() || !quickSchoolCode.trim()) return;
+                            const newSch = {
+                              id: `sch-${Date.now().toString(36)}`,
+                              name: quickSchoolName.trim(),
+                              shortCode: quickSchoolCode.trim().toUpperCase(),
+                              createdAt: Date.now(),
+                            };
+                            await saveSchool(newSch);
+                            setNewSchoolId(newSch.id);
+                            setIsQuickAddSchoolOpen(false);
+                            setQuickSchoolName('');
+                            setQuickSchoolCode('');
+                          }}
+                          className="flex-1 py-1.5 px-3 rounded-lg text-xs font-black bg-light-indigo text-white hover:bg-light-slate-blue transition-colors shadow-xs"
+                        >
+                          Save & Select
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>

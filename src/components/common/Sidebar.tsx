@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
   AlertTriangle,
   CalendarClock,
+  Landmark,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -39,10 +40,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       highlight: true,
     },
     {
+      to: '/admin/records',
+      label: 'Class Records & History',
+      icon: FileSpreadsheet,
+      color: 'text-spiro-disco-ball',
+    },
+    {
       to: '/admin/batches',
       label: 'Batches & Routine',
       icon: Layers,
       color: 'text-spiro-disco-ball',
+    },
+    {
+      to: '/admin/schools',
+      label: 'Schools & Colleges',
+      icon: Landmark,
+      color: 'text-hammam-blue',
     },
     {
       to: '/admin/students',

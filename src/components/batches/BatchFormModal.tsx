@@ -1,22 +1,13 @@
 import React, { useState } from 'react';
-import { Batch, WeeklyDay, WeeklySlot } from '../../types/models';
-import { X, Plus, Trash2, Clock, CalendarDays } from 'lucide-react';
+import { Batch, WeeklySlot } from '../../types/models';
+import { X } from 'lucide-react';
+import { ModernWeeklySchedulePicker } from './ModernWeeklySchedulePicker';
 
 interface BatchFormModalProps {
   batch?: Batch | null;
   onClose: () => void;
   onSave: (batch: Batch) => void;
 }
-
-const DAYS: { id: WeeklyDay; label: string }[] = [
-  { id: 0, label: 'Sunday' },
-  { id: 1, label: 'Monday' },
-  { id: 2, label: 'Tuesday' },
-  { id: 3, label: 'Wednesday' },
-  { id: 4, label: 'Thursday' },
-  { id: 5, label: 'Friday' },
-  { id: 6, label: 'Saturday' },
-];
 
 export const BatchFormModal: React.FC<BatchFormModalProps> = ({ batch, onClose, onSave }) => {
   const [name, setName] = useState(batch?.name || '');
@@ -36,20 +27,6 @@ export const BatchFormModal: React.FC<BatchFormModalProps> = ({ batch, onClose, 
     'exclude_from_total' | 'count_as_present' | 'count_as_absent'
   >(batch?.attendanceRules?.excusedAction || 'exclude_from_total');
   const [isActive, setIsActive] = useState(batch?.isActive ?? true);
-
-  const handleAddSlot = () => {
-    setWeeklyRoutine([...weeklyRoutine, { dayOfWeek: 1, startTime: '16:00', endTime: '17:30' }]);
-  };
-
-  const handleRemoveSlot = (index: number) => {
-    setWeeklyRoutine(weeklyRoutine.filter((_, i) => i !== index));
-  };
-
-  const handleSlotChange = (index: number, field: keyof WeeklySlot, value: any) => {
-    const updated = [...weeklyRoutine];
-    updated[index] = { ...updated[index], [field]: value };
-    setWeeklyRoutine(updated);
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,71 +144,11 @@ export const BatchFormModal: React.FC<BatchFormModalProps> = ({ batch, onClose, 
             </div>
           </div>
 
-          {/* Weekly Routine Schedule Slots */}
-          <div className="border border-slate-200/80 dark:border-dark-border rounded-xl p-4 bg-slate-50/50 dark:bg-slate-800/30 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-                <CalendarDays className="w-4 h-4 text-spiro-disco-ball" />
-                <span>Weekly Routine Schedule</span>
-              </div>
-              <button
-                type="button"
-                onClick={handleAddSlot}
-                className="inline-flex items-center gap-1 text-xs font-bold text-light-indigo dark:text-spiro-disco-ball hover:underline"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Time Slot</span>
-              </button>
-            </div>
-
-            {weeklyRoutine.map((slot, index) => (
-              <div
-                key={index}
-                className="flex flex-wrap sm:flex-nowrap items-center gap-2 p-2.5 rounded-lg bg-white dark:bg-dark-surface border border-slate-200 dark:border-slate-700 text-xs"
-              >
-                <div className="flex-1 min-w-[120px]">
-                  <select
-                    value={slot.dayOfWeek}
-                    onChange={(e) => handleSlotChange(index, 'dayOfWeek', Number(e.target.value))}
-                    className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  >
-                    {DAYS.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                  <input
-                    type="time"
-                    value={slot.startTime}
-                    onChange={(e) => handleSlotChange(index, 'startTime', e.target.value)}
-                    className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  />
-                  <span>to</span>
-                  <input
-                    type="time"
-                    value={slot.endTime}
-                    onChange={(e) => handleSlotChange(index, 'endTime', e.target.value)}
-                    className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  />
-                </div>
-
-                {weeklyRoutine.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveSlot(index)}
-                    className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+          {/* Modern Visual Weekly Routine Schedule Calendar & Picker */}
+          <ModernWeeklySchedulePicker
+            value={weeklyRoutine}
+            onChange={setWeeklyRoutine}
+          />
 
           {/* Performance Weights Matrix */}
           <div className="border border-slate-200/80 dark:border-dark-border rounded-xl p-4 bg-slate-50/50 dark:bg-slate-800/30 space-y-3">
