@@ -8,6 +8,7 @@ import {
   WeeklyDay,
   InClassExamDetail,
   AssignedHomeworkDetail,
+  Student,
 } from '../../types/models';
 import { createWhatsAppLink, WhatsAppTemplates } from '../../lib/whatsappTemplates';
 import {
@@ -38,6 +39,9 @@ import {
   Award,
   Zap,
   Building2,
+  BookOpen,
+  Search,
+  X,
 } from 'lucide-react';
 import { MasterSyllabusSelector } from './MasterSyllabusSelector';
 import { ClassRecordsView } from './ClassRecordsView';
@@ -56,8 +60,11 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
   const {
     batches,
     students,
+    schools,
     sessions,
     sheets,
+    homeworks,
+    syllabusSchemes,
     saveClassSession,
     toggleSheetDistributed,
   } = useData();
@@ -133,6 +140,17 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
     return d.toISOString().split('T')[0];
   });
   const [homeworkDescription, setHomeworkDescription] = useState<string>('');
+  const [homeworkSchemeId, setHomeworkSchemeId] = useState<string>('');
+  const [homeworkSelectedTopics, setHomeworkSelectedTopics] = useState<string[]>([]);
+  const [homeworkCustomTopic, setHomeworkCustomTopic] = useState<string>('');
+  const [homeworkCustomTopicsList, setHomeworkCustomTopicsList] = useState<string[]>([]);
+  const [homeworkGradingMode, setHomeworkGradingMode] = useState<'status_only' | 'status_and_marks'>('status_only');
+  const [homeworkMaxMarks, setHomeworkMaxMarks] = useState<number>(10);
+  const [homeworkTargetType, setHomeworkTargetType] = useState<'whole_batch' | 'specific_schools' | 'specific_students'>('whole_batch');
+  const [homeworkTargetSchoolIds, setHomeworkTargetSchoolIds] = useState<string[]>([]);
+
+  // Distributed lecture sheet states
+  const [distributedSheetIds, setDistributedSheetIds] = useState<string[]>([]);
 
   // Next class lesson plan memo
   const [nextClassLessonPlan, setNextClassLessonPlan] = useState<string>('');
@@ -146,11 +164,34 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
     Record<string, StudentSessionRecord>
   >({});
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'present' | 'absent' | 'late' | 'excused'>('all');
+  const [rosterSchoolFilter, setRosterSchoolFilter] = useState<string>('all');
+  const [rosterSearchQuery, setRosterSearchQuery] = useState<string>('');
+  const [rosterGroupBySchool, setRosterGroupBySchool] = useState<boolean>(true);
 
   // Active batch students
   const activeBatch = batches.find((b) => b.id === selectedBatchId) || batches[0];
   const enrolledStudents = students.filter(
     (s) => s.isActive && s.batchIds?.includes(activeBatch?.id || '')
+  );
+
+  // Distinct schools in active batch
+  const batchSchools = React.useMemo(() => {
+    const ids = Array.from(new Set(enrolledStudents.map((s) => s.schoolId)));
+    return ids
+      .map((id) => schools.find((sc) => sc.id === id) || { id, name: id, shortCode: id, createdAt: 0 })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [enrolledStudents, schools]);
+
+  // Active syllabus schemes for active batch
+  const batchSchemes = React.useMemo(
+    () => syllabusSchemes.filter((sch) => sch.targetBatchId === selectedBatchId),
+    [syllabusSchemes, selectedBatchId]
+  );
+
+  // Active lecture sheets for active batch
+  const batchSheets = React.useMemo(
+    () => sheets.filter((sh) => sh.batchId === selectedBatchId),
+    [sheets, selectedBatchId]
   );
 
   // Initialize or load session records when batch or date changes
@@ -180,13 +221,24 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
         setHasInClassExam(false);
       }
 
+      setDistributedSheetIds(existing.distributedSheetIds || []);
       if (existing.assignedHomework?.hasHomework) {
         setHasAssignedHomework(true);
         setHomeworkTitle(existing.assignedHomework.title || '');
         setHomeworkDueDate(existing.assignedHomework.dueDate || '');
         setHomeworkDescription(existing.assignedHomework.description || '');
+        setHomeworkSchemeId(existing.assignedHomework.schemeId || '');
+        setHomeworkSelectedTopics(existing.assignedHomework.relatedTopics || []);
+        setHomeworkCustomTopicsList(existing.assignedHomework.outOfSyllabusTopics || []);
+        setHomeworkGradingMode(existing.assignedHomework.gradingMode || 'status_only');
+        setHomeworkMaxMarks(existing.assignedHomework.maxMarks || 10);
+        setHomeworkTargetType(existing.assignedHomework.targetType || 'whole_batch');
+        setHomeworkTargetSchoolIds(existing.assignedHomework.targetSchoolIds || []);
       } else {
         setHasAssignedHomework(false);
+        setHomeworkTitle('');
+        setHomeworkSelectedTopics([]);
+        setHomeworkCustomTopicsList([]);
       }
     } else {
       // Default all enrolled students to 'present'
@@ -203,8 +255,12 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
       setAttendanceRecords(defaultRecords);
       setLessonSummary('');
       setSelectedTopics([]);
+      setDistributedSheetIds([]);
       setHasInClassExam(false);
       setHasAssignedHomework(false);
+      setHomeworkTitle('');
+      setHomeworkSelectedTopics([]);
+      setHomeworkCustomTopicsList([]);
       setNextClassLessonPlan('');
       setCustomTitle('');
 
@@ -349,13 +405,20 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
     // Assigned homework detail
     let assignedHwData: AssignedHomeworkDetail | undefined = undefined;
     if (hasAssignedHomework) {
+      const allHwTopics = [...homeworkSelectedTopics, ...homeworkCustomTopicsList];
       assignedHwData = {
         hasHomework: true,
         homeworkId: `hw-${sessionId}`,
         title: homeworkTitle.trim() || `Homework for ${sessionDate}`,
         dueDate: homeworkDueDate,
         description: homeworkDescription.trim(),
-        relatedTopics: selectedTopics,
+        relatedTopics: allHwTopics.length > 0 ? allHwTopics : selectedTopics,
+        outOfSyllabusTopics: homeworkCustomTopicsList,
+        schemeId: homeworkSchemeId || undefined,
+        gradingMode: homeworkGradingMode,
+        maxMarks: homeworkGradingMode === 'status_and_marks' ? Number(homeworkMaxMarks) : undefined,
+        targetType: homeworkTargetType,
+        targetSchoolIds: homeworkTargetType === 'specific_schools' ? homeworkTargetSchoolIds : undefined,
       };
     }
 
@@ -374,6 +437,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
       records: attendanceRecords,
       inClassExam: inClassExamData,
       assignedHomework: assignedHwData,
+      distributedSheetIds,
       nextClassLessonPlan: nextClassLessonPlan.trim() || undefined,
       createdAt: Date.now(),
     };
@@ -890,44 +954,52 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
             )}
           </div>
 
-          {/* ASSIGNED HOMEWORK & NEXT CLASS PLAN INTEGRATION */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Homework Assignment */}
-            <div className="bg-white dark:bg-dark-surface p-5 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-3">
+          {/* ASSIGNED HOMEWORK, LECTURE SHEETS & NEXT CLASS PLAN INTEGRATION */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Homework Assignment (Span 2 cols on lg) */}
+            <div className="bg-white dark:bg-dark-surface p-5 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-3 lg:col-span-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <BookOpenCheck className="w-4 h-4 text-radiant-yellow" />
                   <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                    Homework Assigned
+                    Homework Assignment for this Class
                   </h3>
                 </div>
-                <label className="inline-flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    checked={hasAssignedHomework}
-                    onChange={(e) => setHasAssignedHomework(e.target.checked)}
-                    className="rounded text-light-indigo focus:ring-light-indigo w-3.5 h-3.5"
-                  />
-                  <span className="font-bold text-slate-700 dark:text-slate-300">Assign HW</span>
-                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin/homework')}
+                    className="text-[11px] font-bold text-light-indigo dark:text-neon-blue hover:underline"
+                  >
+                    Open Tracker ↗
+                  </button>
+                  <label className="inline-flex items-center gap-2 cursor-pointer text-xs">
+                    <input
+                      type="checkbox"
+                      checked={hasAssignedHomework}
+                      onChange={(e) => setHasAssignedHomework(e.target.checked)}
+                      className="rounded text-light-indigo focus:ring-light-indigo w-3.5 h-3.5"
+                    />
+                    <span className="font-bold text-slate-700 dark:text-slate-300">Assign HW</span>
+                  </label>
+                </div>
               </div>
 
               {hasAssignedHomework ? (
-                <div className="space-y-2 pt-1 animate-in fade-in-50">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Homework Task Title
-                    </label>
-                    <input
-                      type="text"
-                      value={homeworkTitle}
-                      onChange={(e) => setHomeworkTitle(e.target.value)}
-                      placeholder="e.g. Modifiers Sheet 04 Exercises 1–25"
-                      className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-3 pt-1 animate-in fade-in-50">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Homework Task Title *
+                      </label>
+                      <input
+                        type="text"
+                        value={homeworkTitle}
+                        onChange={(e) => setHomeworkTitle(e.target.value)}
+                        placeholder="e.g. Modifiers Sheet 04 Exercises 1–25"
+                        className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                      />
+                    </div>
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                         Due Date
@@ -939,45 +1011,285 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                         className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                       />
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                        Instructions (Optional)
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Instructions & Reference Notes
+                    </label>
+                    <input
+                      type="text"
+                      value={homeworkDescription}
+                      onChange={(e) => setHomeworkDescription(e.target.value)}
+                      placeholder="e.g. Solve exercises 1 to 20 in HW copy; check board question formats."
+                      className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                    />
+                  </div>
+
+                  {/* Syllabus Scheme Link & Topic Picker */}
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <BookOpen className="w-3 h-3 text-light-indigo" />
+                        <span>Link to Syllabus Scheme (Optional):</span>
                       </label>
-                      <input
-                        type="text"
-                        value={homeworkDescription}
-                        onChange={(e) => setHomeworkDescription(e.target.value)}
-                        placeholder="e.g. Solve in homework copy"
-                        className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                      />
+                      <select
+                        value={homeworkSchemeId}
+                        onChange={(e) => setHomeworkSchemeId(e.target.value)}
+                        className="px-2 py-1 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                      >
+                        <option value="">No Scheme / Independent Homework</option>
+                        {batchSchemes.map((sch) => (
+                          <option key={sch.id} value={sch.id}>
+                            {sch.title} ({sch.termType.replace('_', ' ').toUpperCase()})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Topic chips from selected scheme */}
+                    {homeworkSchemeId && (
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                          Select Syllabus Topics Tested:
+                        </span>
+                        <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar p-1">
+                          {batchSchemes
+                            .find((s) => s.id === homeworkSchemeId)
+                            ?.topics.map((top) => {
+                              const isChecked = homeworkSelectedTopics.includes(top.title);
+                              return (
+                                <button
+                                  key={top.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setHomeworkSelectedTopics((prev) =>
+                                      isChecked
+                                        ? prev.filter((t) => t !== top.title)
+                                        : [...prev, top.title]
+                                    );
+                                  }}
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all ${
+                                    isChecked
+                                      ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                                  }`}
+                                >
+                                  {top.title}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Out of Syllabus Custom Topic adder */}
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-700/80">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={homeworkCustomTopic}
+                          onChange={(e) => setHomeworkCustomTopic(e.target.value)}
+                          placeholder="+ Out-of-syllabus topic (e.g. Extra Olympiad Rules)"
+                          className="flex-1 px-2.5 py-1 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (
+                              homeworkCustomTopic.trim() &&
+                              !homeworkCustomTopicsList.includes(homeworkCustomTopic.trim())
+                            ) {
+                              setHomeworkCustomTopicsList((prev) => [
+                                ...prev,
+                                homeworkCustomTopic.trim(),
+                              ]);
+                              setHomeworkCustomTopic('');
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500 text-white hover:bg-amber-600 shadow-2xs"
+                        >
+                          Add
+                        </button>
+                      </div>
+
+                      {homeworkCustomTopicsList.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {homeworkCustomTopicsList.map((ct, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+                            >
+                              <span>⚡ {ct}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setHomeworkCustomTopicsList((prev) =>
+                                    prev.filter((_, i) => i !== idx)
+                                  )
+                                }
+                                className="hover:text-red-500"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
+
+                  {/* Target Scope & Grading Mode */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Target Student Scope
+                      </label>
+                      <select
+                        value={homeworkTargetType}
+                        onChange={(e) => setHomeworkTargetType(e.target.value as any)}
+                        className="w-full px-2.5 py-1 rounded-lg font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                      >
+                        <option value="whole_batch">Entire Batch ({enrolledStudents.length} Students)</option>
+                        <option value="specific_schools">Specific Schools in Batch</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Evaluation Mode
+                      </label>
+                      <select
+                        value={homeworkGradingMode}
+                        onChange={(e) => setHomeworkGradingMode(e.target.value as any)}
+                        className="w-full px-2.5 py-1 rounded-lg font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                      >
+                        <option value="status_only">Fast Status (Done/Partial/Late/Not Done)</option>
+                        <option value="status_and_marks">Status + Numeric Marks</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {homeworkTargetType === 'specific_schools' && (
+                    <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-1">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                        Select Target Schools:
+                      </span>
+                      <div className="grid grid-cols-2 gap-1 text-xs">
+                        {batchSchools.map((sc) => {
+                          const isChecked = homeworkTargetSchoolIds.includes(sc.id);
+                          return (
+                            <label key={sc.id} className="inline-flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  setHomeworkTargetSchoolIds((prev) =>
+                                    isChecked ? prev.filter((id) => id !== sc.id) : [...prev, sc.id]
+                                  );
+                                }}
+                                className="rounded text-light-indigo focus:ring-light-indigo w-3.5 h-3.5"
+                              />
+                              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                {sc.name}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="text-xs text-slate-400 italic">
-                  No homework tagged to this session. Check 'Assign HW' to log homework due next class.
+                  No homework tagged to this session. Check 'Assign HW' to record a task with syllabus topics or custom exercises.
                 </p>
               )}
             </div>
 
-            {/* Next Class Lesson Plan */}
-            <div className="bg-white dark:bg-dark-surface p-5 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-3">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-spiro-disco-ball" />
-                <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                  Next Class Preparation Plan & Memo
-                </h3>
+            {/* Distributed Lecture Sheets & Next Class Memo (1 col on lg) */}
+            <div className="space-y-4">
+              {/* Lecture Sheet Handout Selection */}
+              <div className="bg-white dark:bg-dark-surface p-4 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                    <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                      Handout Distributed Today
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin/lecture-sheets')}
+                    className="text-[10px] font-bold text-teal-700 dark:text-teal-400 hover:underline"
+                  >
+                    Sheets ↗
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Select sheets given in class. Attendees marked Present/Late will auto-receive them!
+                </p>
+
+                {batchSheets.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">
+                    No sheets logged for this batch yet.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar">
+                    {batchSheets.map((sh) => {
+                      const isChecked = distributedSheetIds.includes(sh.id);
+                      return (
+                        <label
+                          key={sh.id}
+                          className={`p-2 rounded-xl border flex items-center justify-between gap-2 cursor-pointer transition-all ${
+                            isChecked
+                              ? 'bg-teal-500/10 border-teal-500/30'
+                              : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:border-teal-500'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setDistributedSheetIds((prev) =>
+                                  isChecked ? prev.filter((id) => id !== sh.id) : [...prev, sh.id]
+                                );
+                              }}
+                              className="rounded text-teal-600 focus:ring-teal-600 w-3.5 h-3.5"
+                            />
+                            <div className="truncate">
+                              <span className="text-[10px] font-black text-teal-700 dark:text-teal-300 block">
+                                {sh.sheetNumber}
+                              </span>
+                              <span className="text-xs font-bold text-slate-900 dark:text-white truncate block">
+                                {sh.title}
+                              </span>
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Reminder note for what to teach and check in the upcoming routine class.
-              </p>
-              <textarea
-                rows={3}
-                value={nextClassLessonPlan}
-                onChange={(e) => setNextClassLessonPlan(e.target.value)}
-                placeholder="e.g. Check Modifiers HW, begin Narration rules 1–5, distribute lecture sheet 05."
-                className="w-full px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-light-indigo"
-              />
+
+              {/* Next Class Lesson Plan */}
+              <div className="bg-white dark:bg-dark-surface p-4 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <MessageSquare className="w-4 h-4 text-spiro-disco-ball" />
+                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                    Next Class Memo
+                  </h3>
+                </div>
+                <textarea
+                  rows={2}
+                  value={nextClassLessonPlan}
+                  onChange={(e) => setNextClassLessonPlan(e.target.value)}
+                  placeholder="e.g. Check Modifiers HW, distribute Sheet 05."
+                  className="w-full px-3 py-1.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-light-indigo"
+                />
+              </div>
             </div>
           </div>
 
@@ -999,6 +1311,16 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
               enrolledStudents.length > 0 ? Math.round((presentCount / enrolledStudents.length) * 100) : 0;
 
             const displayedStudents = enrolledStudents.filter((stu) => {
+              if (rosterSchoolFilter !== 'all' && stu.schoolId !== rosterSchoolFilter) {
+                return false;
+              }
+              if (rosterSearchQuery.trim()) {
+                const q = rosterSearchQuery.toLowerCase().trim();
+                const matchName = stu.name.toLowerCase().includes(q);
+                const matchRoll = (stu.publicRollNo || '').toLowerCase().includes(q);
+                const matchSchool = (stu.schoolName || '').toLowerCase().includes(q);
+                if (!matchName && !matchRoll && !matchSchool) return false;
+              }
               if (attendanceFilter === 'all') return true;
               const status = attendanceRecords[stu.id]?.attendance || 'present';
               return status === attendanceFilter;
@@ -1049,6 +1371,63 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                           <span>WhatsApp Absentees ({absentCount})</span>
                         </button>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Search and School Filter Row */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={rosterSearchQuery}
+                        onChange={(e) => setRosterSearchQuery(e.target.value)}
+                        placeholder="Search student by name, roll # or school..."
+                        className="w-full pl-8 pr-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                      />
+                      {rosterSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setRosterSearchQuery('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 min-w-[180px]">
+                        <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <select
+                          value={rosterSchoolFilter}
+                          onChange={(e) => setRosterSchoolFilter(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                        >
+                          <option value="all">All Schools ({enrolledStudents.length})</option>
+                          {batchSchools.map((sc) => {
+                            const scCount = enrolledStudents.filter((s) => s.schoolId === sc.id).length;
+                            return (
+                              <option key={sc.id} value={sc.id}>
+                                {sc.name} ({scCount})
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setRosterGroupBySchool(!rosterGroupBySchool)}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border flex items-center gap-1 transition-all ${
+                          rosterGroupBySchool
+                            ? 'bg-light-indigo text-white border-light-indigo shadow-xs'
+                            : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Group Schools</span>
+                      </button>
                     </div>
                   </div>
 
@@ -1153,9 +1532,9 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                     </div>
                   </div>
                 ) : (
-                  /* Enrolled Students Cards List (Optimized for Mobile) */
-                  <div className="p-3 sm:p-5 space-y-3">
-                    {displayedStudents.map((stu) => {
+                  /* Enrolled Students Cards List (Supports School Grouping & Flat View) */
+                  (() => {
+                    const renderStudentCard = (stu: Student) => {
                       const record = attendanceRecords[stu.id] || {
                         studentId: stu.id,
                         attendance: 'present',
@@ -1356,8 +1735,77 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                           )}
                         </div>
                       );
-                    })}
-                  </div>
+                    };
+
+                    if (rosterGroupBySchool) {
+                      // Group displayed students by school
+                      const schoolGroups = new Map<string, Student[]>();
+                      displayedStudents.forEach((stu) => {
+                        const sc = stu.schoolName || 'School';
+                        if (!schoolGroups.has(sc)) schoolGroups.set(sc, []);
+                        schoolGroups.get(sc)!.push(stu);
+                      });
+
+                      return (
+                        <div className="p-3 sm:p-5 space-y-4">
+                          {Array.from(schoolGroups.entries())
+                            .sort(([a], [b]) => a.localeCompare(b))
+                            .map(([schoolName, schoolStudents]) => {
+                              const schoolPresent = schoolStudents.filter(
+                                (s) => (attendanceRecords[s.id]?.attendance || 'present') === 'present'
+                              ).length;
+
+                              return (
+                                <div
+                                  key={schoolName}
+                                  className="rounded-2xl border border-slate-200/80 dark:border-dark-border bg-slate-50/50 dark:bg-slate-900/30 p-3 space-y-3"
+                                >
+                                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-800">
+                                    <div className="flex items-center gap-2">
+                                      <Building2 className="w-4 h-4 text-slate-500" />
+                                      <span className="font-extrabold text-sm text-slate-900 dark:text-white">
+                                        {schoolName}
+                                      </span>
+                                      <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                        {schoolPresent} / {schoolStudents.length} Present
+                                      </span>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = { ...attendanceRecords };
+                                        schoolStudents.forEach((stu) => {
+                                          updated[stu.id] = {
+                                            ...updated[stu.id],
+                                            studentId: stu.id,
+                                            attendance: 'present',
+                                          };
+                                        });
+                                        setAttendanceRecords(updated);
+                                      }}
+                                      className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline"
+                                    >
+                                      + Mark All {schoolName} Present
+                                    </button>
+                                  </div>
+
+                                  <div className="space-y-3">
+                                    {schoolStudents.map(renderStudentCard)}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="p-3 sm:p-5 space-y-3">
+                        {displayedStudents.map(renderStudentCard)}
+                      </div>
+                    );
+                  })()
                 )}
               </div>
             );

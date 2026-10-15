@@ -6,6 +6,7 @@ import {
   Exam,
   GlobalSettings,
   Homework,
+  HomeworkStatus,
   HomeworkSubmission,
   LectureSheet,
   School,
@@ -77,10 +78,25 @@ interface DataContextType {
   saveHomework: (homework: Homework) => Promise<void>;
   deleteHomework: (hwId: string) => Promise<void>;
   saveHomeworkSubmission: (homeworkId: string, studentId: string, submission: HomeworkSubmission) => Promise<void>;
+  bulkUpdateHomeworkSubmissions: (
+    homeworkId: string,
+    updates: Record<string, HomeworkStatus | HomeworkSubmission>
+  ) => Promise<void>;
   saveExam: (exam: Exam) => Promise<void>;
   deleteExam: (examId: string) => Promise<void>;
   saveLectureSheet: (sheet: LectureSheet) => Promise<void>;
   toggleSheetDistributed: (sheetId: string, studentId: string) => Promise<void>;
+  bulkUpdateSheetDistribution: (
+    sheetId: string,
+    studentIds: string[],
+    status: 'received' | 'pending'
+  ) => Promise<void>;
+  setSheetStudentStatus: (
+    sheetId: string,
+    studentId: string,
+    status: 'received' | 'pending' | 'absent_needs_handout' | 'extra_copy',
+    remarks?: string
+  ) => Promise<void>;
   deleteLectureSheet: (sheetId: string) => Promise<void>;
   saveBonusLog: (log: BonusLog) => Promise<void>;
   deleteBonusLog: (logId: string) => Promise<void>;
@@ -747,34 +763,46 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Automated Assigned Homework Sync
-    if (session.assignedHomework?.hasHomework) {
-      const hwId = session.assignedHomework.homeworkId || `hw-${session.id}`;
-      const generatedHw: Homework = {
-        id: hwId,
-        batchId: session.batchId,
-        title: session.assignedHomework.title || `Homework from ${session.date}`,
-        assignedDate: session.date,
-        dueDate: session.assignedHomework.dueDate,
-        description: session.assignedHomework.description,
-        relatedTopics: session.topicsTaught || [],
-        targetType: 'whole_batch',
-        gradingMode: 'status_only',
-        submissions: {},
-        createdAt: Date.now(),
-      };
-
+    const hwData = session.assignedHomework;
+    if (hwData?.hasHomework) {
+      const hwId = hwData.homeworkId || `hw-${session.id}`;
       setHomeworks((prev) => {
-        const idx = prev.findIndex((h) => h.id === hwId);
-        return idx >= 0 ? prev.map((h) => (h.id === hwId ? generatedHw : h)) : [generatedHw, ...prev];
-      });
+        const existingHw = prev.find((h) => h.id === hwId);
+        const relatedTopics =
+          hwData.relatedTopics && hwData.relatedTopics.length > 0
+            ? hwData.relatedTopics
+            : (session.topicsTaught || []);
 
-      if (isFirebaseConfigured && db) {
-        try {
-          await firestoreSet(doc(db, 'homeworks', hwId), generatedHw);
-        } catch (err: any) {
-          console.warn('[NPB Firestore homework sync]:', err.message);
+        const generatedHw: Homework = {
+          id: hwId,
+          batchId: session.batchId,
+          title: hwData.title || `Homework from ${session.date}`,
+          assignedDate: session.date,
+          dueDate: hwData.dueDate,
+          description: hwData.description,
+          relatedTopics,
+          outOfSyllabusTopics: hwData.outOfSyllabusTopics || [],
+          schemeId: hwData.schemeId,
+          sessionId: session.id,
+          targetType: hwData.targetType || 'whole_batch',
+          targetSchoolIds: hwData.targetSchoolIds || [],
+          gradingMode: hwData.gradingMode || 'status_only',
+          maxMarks: hwData.maxMarks,
+          submissions: existingHw?.submissions || {},
+          createdAt: existingHw?.createdAt || Date.now(),
+        };
+
+        const idx = prev.findIndex((h) => h.id === hwId);
+        const nextList = idx >= 0 ? prev.map((h) => (h.id === hwId ? generatedHw : h)) : [generatedHw, ...prev];
+
+        if (isFirebaseConfigured && db) {
+          firestoreSet(doc(db, 'homeworks', hwId), generatedHw).catch((err) =>
+            console.warn('[NPB Firestore homework sync]:', err.message)
+          );
         }
-      }
+
+        return nextList;
+      });
     }
 
     // Automated Lecture Sheet Handout Sync
@@ -865,6 +893,43 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return updatedHw;
       })
     );
+  };
+
+  const bulkUpdateHomeworkSubmissions = async (
+    homeworkId: string,
+    updates: Record<string, HomeworkStatus | HomeworkSubmission>
+  ) => {
+    let updatedHw: Homework | null = null;
+    setHomeworks((prev) =>
+      prev.map((h) => {
+        if (h.id !== homeworkId) return h;
+        const newSubs = { ...h.submissions };
+        Object.entries(updates).forEach(([stuId, val]) => {
+          if (typeof val === 'string') {
+            newSubs[stuId] = {
+              ...(newSubs[stuId] || { studentId: stuId }),
+              status: val as HomeworkStatus,
+              checkedAt: Date.now(),
+            };
+          } else {
+            newSubs[stuId] = {
+              ...val,
+              checkedAt: Date.now(),
+            };
+          }
+        });
+        updatedHw = { ...h, submissions: newSubs };
+        return updatedHw;
+      })
+    );
+
+    if (updatedHw && isFirebaseConfigured && db) {
+      try {
+        await firestoreSet(doc(db, 'homeworks', homeworkId), updatedHw);
+      } catch (err: any) {
+        console.warn('[NPB Firestore bulkUpdateHomeworkSubmissions]:', err.message);
+      }
+    }
   };
 
   // Critical Module 5 Requirement: Automated Weak Topic Radar & Syllabus update on Exam Save
@@ -1012,6 +1077,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const toggleSheetDistributed = async (sheetId: string, studentId: string) => {
+    let updatedSheet: LectureSheet | null = null;
     setSheets((prev) =>
       prev.map((sh) => {
         if (sh.id !== sheetId) return sh;
@@ -1020,17 +1086,125 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const updated = isReceived
           ? received.filter((id) => id !== studentId)
           : [...received, studentId];
-        const updatedSheet = { ...sh, receivedByStudentIds: updated };
-        if (isFirebaseConfigured && db) {
-          try {
-            firestoreSet(doc(db, 'lectureSheets', sh.id), updatedSheet);
-          } catch (err: any) {
-            console.warn('[NPB Firestore toggleSheetDistributed]:', err.message);
-          }
-        }
+
+        const updatedStatuses = {
+          ...(sh.studentStatuses || {}),
+          [studentId]: {
+            status: isReceived ? ('pending' as const) : ('received' as const),
+            receivedAt: isReceived ? undefined : Date.now(),
+            remarks: sh.studentStatuses?.[studentId]?.remarks,
+          },
+        };
+
+        updatedSheet = {
+          ...sh,
+          receivedByStudentIds: updated,
+          studentStatuses: updatedStatuses,
+        };
         return updatedSheet;
       })
     );
+
+    if (updatedSheet && isFirebaseConfigured && db) {
+      try {
+        await firestoreSet(doc(db, 'lectureSheets', sheetId), updatedSheet);
+      } catch (err: any) {
+        console.warn('[NPB Firestore toggleSheetDistributed]:', err.message);
+      }
+    }
+  };
+
+  const bulkUpdateSheetDistribution = async (
+    sheetId: string,
+    studentIds: string[],
+    status: 'received' | 'pending'
+  ) => {
+    let updatedSheet: LectureSheet | null = null;
+    setSheets((prev) =>
+      prev.map((sh) => {
+        if (sh.id !== sheetId) return sh;
+        let newReceived = [...(sh.receivedByStudentIds || [])];
+        const newStatuses = { ...(sh.studentStatuses || {}) };
+
+        if (status === 'received') {
+          studentIds.forEach((id) => {
+            if (!newReceived.includes(id)) newReceived.push(id);
+            newStatuses[id] = {
+              status: 'received',
+              receivedAt: Date.now(),
+              remarks: newStatuses[id]?.remarks,
+            };
+          });
+        } else {
+          newReceived = newReceived.filter((id) => !studentIds.includes(id));
+          studentIds.forEach((id) => {
+            newStatuses[id] = {
+              status: 'pending',
+              remarks: newStatuses[id]?.remarks,
+            };
+          });
+        }
+
+        updatedSheet = {
+          ...sh,
+          receivedByStudentIds: newReceived,
+          studentStatuses: newStatuses,
+        };
+        return updatedSheet;
+      })
+    );
+
+    if (updatedSheet && isFirebaseConfigured && db) {
+      try {
+        await firestoreSet(doc(db, 'lectureSheets', sheetId), updatedSheet);
+      } catch (err: any) {
+        console.warn('[NPB Firestore bulkUpdateSheetDistribution]:', err.message);
+      }
+    }
+  };
+
+  const setSheetStudentStatus = async (
+    sheetId: string,
+    studentId: string,
+    status: 'received' | 'pending' | 'absent_needs_handout' | 'extra_copy',
+    remarks?: string
+  ) => {
+    let updatedSheet: LectureSheet | null = null;
+    setSheets((prev) =>
+      prev.map((sh) => {
+        if (sh.id !== sheetId) return sh;
+        let newReceived = [...(sh.receivedByStudentIds || [])];
+        if (status === 'received' || status === 'extra_copy') {
+          if (!newReceived.includes(studentId)) newReceived.push(studentId);
+        } else {
+          newReceived = newReceived.filter((id) => id !== studentId);
+        }
+
+        const newStatuses = {
+          ...(sh.studentStatuses || {}),
+          [studentId]: {
+            status,
+            receivedAt: status === 'received' || status === 'extra_copy' ? Date.now() : undefined,
+            remarks: remarks !== undefined ? remarks : sh.studentStatuses?.[studentId]?.remarks,
+          },
+        };
+
+        updatedSheet = {
+          ...sh,
+          receivedByStudentIds: newReceived,
+          studentStatuses: newStatuses,
+        };
+        return updatedSheet;
+      })
+    );
+
+    if (updatedSheet && isFirebaseConfigured && db) {
+      try {
+        await firestoreSet(doc(db, 'lectureSheets', sheetId), updatedSheet);
+      } catch (err: any) {
+        console.warn('[NPB Firestore setSheetStudentStatus]:', err.message);
+      }
+    }
   };
 
   const deleteLectureSheet = async (sheetId: string) => {
@@ -1344,10 +1518,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveHomework,
         deleteHomework,
         saveHomeworkSubmission,
+        bulkUpdateHomeworkSubmissions,
         saveExam,
         deleteExam,
         saveLectureSheet,
         toggleSheetDistributed,
+        bulkUpdateSheetDistribution,
+        setSheetStudentStatus,
         deleteLectureSheet,
         saveBonusLog,
         deleteBonusLog,

@@ -161,6 +161,12 @@ export interface AssignedHomeworkDetail {
   dueDate: string;
   description?: string;
   relatedTopics: string[];
+  outOfSyllabusTopics?: string[];
+  schemeId?: string;
+  gradingMode?: 'status_only' | 'status_and_marks';
+  maxMarks?: number;
+  targetType?: 'whole_batch' | 'specific_schools' | 'specific_students';
+  targetSchoolIds?: string[];
 }
 
 export interface ClassSession {
@@ -199,6 +205,9 @@ export interface Homework {
   title: string;
   description?: string;
   relatedTopics: string[];
+  outOfSyllabusTopics?: string[];
+  schemeId?: string;
+  sessionId?: string; // Bidirectional link to ClassSession
   assignedDate: string;
   dueDate: string;
   targetType: 'whole_batch' | 'specific_schools' | 'specific_students';
@@ -229,12 +238,17 @@ export interface StudentExamResult {
   remarks?: string;
 }
 
+export type ExamCategoryType = 'weekly_quiz' | 'monthly_test' | 'term_exam' | 'pop_quiz';
+
 export interface Exam {
   id: string;
   batchId: string;
   title: string;
   examDate: string;
   startTime?: string;
+  examType?: ExamCategoryType;
+  termExamType?: SyllabusTermType;
+  syllabusSchemeId?: string;
   scopeType: 'batch_wide' | 'school_specific' | 'student_specific';
   targetSchoolIds?: string[];
   targetStudentIds?: string[];
@@ -247,15 +261,36 @@ export interface Exam {
   createdAt: number;
 }
 
+export type LectureSheetType =
+  | 'lecture_note'
+  | 'practice_sheet'
+  | 'solution_sheet'
+  | 'exam_paper'
+  | 'formula_sheet';
+
+export interface LectureSheetStudentStatus {
+  status: 'received' | 'pending' | 'absent_needs_handout' | 'extra_copy';
+  receivedAt?: number;
+  remarks?: string;
+}
+
 export interface LectureSheet {
   id: string;
   batchId: string;
   sheetNumber: string; // e.g. "Sheet #04"
   title: string; // e.g. "Modifiers Master Sheet"
   relatedTopic?: string;
+  relatedTopics?: string[];
+  outOfSyllabusTopics?: string[];
+  schemeId?: string;
+  sheetType?: LectureSheetType;
   distributedDate: string;
   receivedByStudentIds: string[]; // Students who received the sheet
   targetStudentIds: string[]; // All students who should receive it
+  targetType?: 'whole_batch' | 'specific_schools' | 'specific_students';
+  targetSchoolIds?: string[];
+  totalCopiesPrinted?: number; // Physical stock count
+  studentStatuses?: Record<string, LectureSheetStudentStatus>;
   createdAt: number;
 }
 
