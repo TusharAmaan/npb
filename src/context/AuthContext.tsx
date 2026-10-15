@@ -10,18 +10,10 @@ import { auth, googleProvider, isFirebaseConfigured } from '../lib/firebase';
 
 export const PRIMARY_ADMIN_EMAIL = 'tushar.aman05@gmail.com';
 
+// STRICT ADMIN AUTHORIZATION: Only tushar.aman05@gmail.com is authorized
 export const isAuthorizedAdmin = (email: string | null | undefined): boolean => {
   if (!email) return false;
-  const normalized = email.trim().toLowerCase();
-  if (normalized === PRIMARY_ADMIN_EMAIL.toLowerCase()) return true;
-
-  // Additional admin emails configured in environment
-  const extraAdmins = (import.meta.env.VITE_ADMIN_EMAILS || '')
-    .split(',')
-    .map((e: string) => e.trim().toLowerCase())
-    .filter(Boolean);
-
-  return extraAdmins.includes(normalized);
+  return email.trim().toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase();
 };
 
 export interface AdminUser {
@@ -36,6 +28,8 @@ interface AuthContextType {
   currentUser: AdminUser | null;
   isAdmin: boolean;
   isLoading: boolean;
+  accessDeniedMessage: string | null;
+  clearAccessDeniedMessage: () => void;
   signInGoogle: () => Promise<void>;
   signInEmail: (email: string, pass: string) => Promise<void>;
   devLoginAsAdmin: () => void;
@@ -61,6 +55,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [accessDeniedMessage, setAccessDeniedMessage] = useState<string | null>(null);
+
+  const clearAccessDeniedMessage = () => setAccessDeniedMessage(null);
 
   useEffect(() => {
     if (isFirebaseConfigured && auth) {
@@ -71,6 +68,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await firebaseSignOut(auth);
             setCurrentUser(null);
             localStorage.removeItem('npb_admin_session');
+            setAccessDeniedMessage(
+              `Access Denied: "${user.email}" is not authorized. Only ${PRIMARY_ADMIN_EMAIL} has administrative access.`
+            );
             setIsLoading(false);
             return;
           }
@@ -83,6 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           setCurrentUser(adminObj);
           localStorage.setItem('npb_admin_session', JSON.stringify(adminObj));
+          setAccessDeniedMessage(null);
         } else {
           // If no dev session active, clear
           if (!currentUser?.isDevAdmin) {
@@ -99,6 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [currentUser?.isDevAdmin]);
 
   const signInGoogle = async () => {
+    setAccessDeniedMessage(null);
     if (isFirebaseConfigured && auth && googleProvider) {
       try {
         const result = await signInWithPopup(auth, googleProvider);
@@ -109,9 +111,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await firebaseSignOut(auth);
           setCurrentUser(null);
           localStorage.removeItem('npb_admin_session');
-          throw new Error(
-            `Access Denied: "${userEmail}" is not authorized. Only ${PRIMARY_ADMIN_EMAIL} has administrator access.`
-          );
+          const deniedMsg = `Access Denied: "${userEmail}" is not authorized. Only ${PRIMARY_ADMIN_EMAIL} has administrative access to this system.`;
+          setAccessDeniedMessage(deniedMsg);
+          throw new Error(deniedMsg);
         }
 
         const adminObj: AdminUser = {
@@ -137,10 +139,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInEmail = async (email: string, pass: string) => {
+    setAccessDeniedMessage(null);
     if (!isAuthorizedAdmin(email)) {
-      throw new Error(
-        `Access Denied: "${email}" is not authorized. Only ${PRIMARY_ADMIN_EMAIL} has administrator access.`
-      );
+      const deniedMsg = `Access Denied: "${email}" is not authorized. Only ${PRIMARY_ADMIN_EMAIL} has administrator access.`;
+      setAccessDeniedMessage(deniedMsg);
+      throw new Error(deniedMsg);
     }
 
     if (isFirebaseConfigured && auth) {
@@ -173,6 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const devLoginAsAdmin = () => {
+    setAccessDeniedMessage(null);
     const adminObj: AdminUser = {
       uid: 'admin-tushar-dev-001',
       email: PRIMARY_ADMIN_EMAIL,
@@ -200,6 +204,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentUser,
         isAdmin,
         isLoading,
+        accessDeniedMessage,
+        clearAccessDeniedMessage,
         signInGoogle,
         signInEmail,
         devLoginAsAdmin,

@@ -2,10 +2,17 @@ import React, { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { NPBLogo } from '../common/NPBLogo';
-import { ShieldCheck, LogIn, Lock, Mail, Sparkles, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, LogIn, Lock, Mail, Sparkles, CheckCircle2, ShieldAlert } from 'lucide-react';
 
 export const AdminLogin: React.FC = () => {
-  const { signInGoogle, signInEmail, devLoginAsAdmin, isAdmin } = useAuth();
+  const {
+    signInGoogle,
+    signInEmail,
+    devLoginAsAdmin,
+    isAdmin,
+    accessDeniedMessage,
+    clearAccessDeniedMessage,
+  } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('tushar.aman05@gmail.com');
@@ -63,7 +70,19 @@ export const AdminLogin: React.FC = () => {
           </p>
         </div>
 
-        {error && (
+        {accessDeniedMessage && (
+          <div className="p-4 rounded-2xl bg-light-red/10 border-2 border-light-red/40 space-y-2 text-center animate-shake">
+            <div className="w-10 h-10 rounded-full bg-light-red/20 text-light-red mx-auto flex items-center justify-center">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <h3 className="font-black text-sm text-red-600 dark:text-light-red">Access Denied</h3>
+            <p className="text-xs text-slate-700 dark:text-slate-300 font-semibold leading-relaxed">
+              {accessDeniedMessage}
+            </p>
+          </div>
+        )}
+
+        {error && !accessDeniedMessage && (
           <div className="p-3 rounded-xl bg-light-red/10 border border-light-red/30 text-xs font-semibold text-red-700 dark:text-light-red">
             {error}
           </div>

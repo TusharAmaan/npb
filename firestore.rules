@@ -2,66 +2,76 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: Only tushar.aman05@gmail.com is granted admin access
+    // STRICT ADMIN ACCESS: Only tushar.aman05@gmail.com is granted write / mutation access
     function isTusharAdmin() {
       return request.auth != null && 
         request.auth.token.email.lower() == "tushar.aman05@gmail.com";
     }
 
-    // Settings: Public can read platform name & theme, only tushar.aman05@gmail.com can write
+    // Settings: Public read (for branding & theme), only tushar.aman05@gmail.com can write
     match /settings/{docId} {
       allow read: if true;
       allow write: if isTusharAdmin();
     }
 
-    // Batches: Only tushar.aman05@gmail.com has access
+    // Batches: Public read (for schedule display), only tushar.aman05@gmail.com can write
     match /batches/{batchId} {
-      allow read, write: if isTusharAdmin();
+      allow read: if true;
+      allow write: if isTusharAdmin();
     }
 
-    // Schools: Only tushar.aman05@gmail.com has access
+    // Schools: Public read (for directory), only tushar.aman05@gmail.com can write
     match /schools/{schoolId} {
-      allow read, write: if isTusharAdmin();
+      allow read: if true;
+      allow write: if isTusharAdmin();
     }
 
-    // Students: Private student records, only tushar.aman05@gmail.com can access
+    // Students: Public read (for leaderboard & parent report card), only tushar.aman05@gmail.com can write
     match /students/{studentId} {
-      allow read, write: if isTusharAdmin();
+      allow read: if true;
+      allow write: if isTusharAdmin();
     }
 
-    // Student Syllabi: Only tushar.aman05@gmail.com can access
+    // Student Syllabi: Read for student progress, only tushar.aman05@gmail.com can write
     match /studentSyllabi/{studentId} {
-      allow read, write: if isTusharAdmin();
+      allow read: if true;
+      allow write: if isTusharAdmin();
     }
 
-    // Class Sessions & Attendance: Only tushar.aman05@gmail.com can access
+    // Class Sessions & Attendance: Read for student history, only tushar.aman05@gmail.com can write
     match /classSessions/{sessionId} {
-      allow read, write: if isTusharAdmin();
+      allow read: if true;
+      allow write: if isTusharAdmin();
     }
 
-    // Homeworks: Only tushar.aman05@gmail.com can access
+    // Homeworks: Read for student homework tracker, only tushar.aman05@gmail.com can write
     match /homeworks/{homeworkId} {
-      allow read, write: if isTusharAdmin();
+      allow read: if true;
+      allow write: if isTusharAdmin();
     }
 
-    // Exams: Only tushar.aman05@gmail.com can access
+    // Exams: Read for leaderboard scoring, only tushar.aman05@gmail.com can write
     match /exams/{examId} {
-      allow read, write: if isTusharAdmin();
+      allow read: if true;
+      allow write: if isTusharAdmin();
     }
 
-    // Lecture Sheets: Only tushar.aman05@gmail.com can access
+    // Lecture Sheets: Only tushar.aman05@gmail.com can write
     match /lectureSheets/{sheetId} {
-      allow read, write: if isTusharAdmin();
+      allow read: if true;
+      allow write: if isTusharAdmin();
     }
 
-    // Bonus Logs: Only tushar.aman05@gmail.com can access
+    // Bonus Logs: Only tushar.aman05@gmail.com can write
     match /bonusLogs/{logId} {
-      allow read, write: if isTusharAdmin();
+      allow read: if true;
+      allow write: if isTusharAdmin();
     }
 
-    // Catch-all: Deny all reads & writes unless authenticated as tushar.aman05@gmail.com
+    // Catch-all fallback: Read allowed, all writes strictly locked to tushar.aman05@gmail.com
     match /{document=**} {
-      allow read, write: if isTusharAdmin();
+      allow read: if true;
+      allow write: if isTusharAdmin();
     }
   }
 }

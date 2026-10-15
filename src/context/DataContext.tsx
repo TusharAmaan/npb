@@ -25,16 +25,23 @@ import {
   initialStudents,
   initialSyllabi,
 } from '../lib/seedData';
-import { db, isFirebaseConfigured } from '../lib/firebase';
+import { db, auth, isFirebaseConfigured } from '../lib/firebase';
 import {
   collection,
   doc,
   setDoc,
   deleteDoc,
+  getDocs,
   onSnapshot,
   QuerySnapshot,
   DocumentData,
 } from 'firebase/firestore';
+
+export interface CloudSyncStatus {
+  status: 'idle' | 'syncing' | 'success' | 'error';
+  message: string;
+  timestamp: number;
+}
 
 interface DataContextType {
   schools: School[];
@@ -48,6 +55,7 @@ interface DataContextType {
   bonusLogs: BonusLog[];
   settings: GlobalSettings;
   isLoading: boolean;
+  lastCloudSyncStatus: CloudSyncStatus | null;
 
   // Actions
   saveBatch: (batch: Batch) => Promise<void>;
@@ -71,6 +79,9 @@ interface DataContextType {
   saveBonusLog: (log: BonusLog) => Promise<void>;
   deleteBonusLog: (logId: string) => Promise<void>;
   updateSettings: (newSettings: Partial<GlobalSettings>) => Promise<void>;
+
+  // Cloud Firestore Sync Engine
+  pushAllDataToFirestore: () => Promise<{ success: boolean; count: number; error?: string }>;
 
   // Data management
   loadDemoData: () => void;
@@ -110,8 +121,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loadLocal('settings', initialGlobalSettings)
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [lastCloudSyncStatus, setLastCloudSyncStatus] = useState<CloudSyncStatus | null>(null);
 
-  // Sync to local storage whenever state changes
+  // Sync to local storage whenever state changes (keeps offline cache always up to date)
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_PREFIX + 'schools', JSON.stringify(schools));
   }, [schools]);
@@ -233,6 +245,118 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // --- Push All Data Engine to Cloud Firestore ---
+  const pushAllDataToFirestore = async (): Promise<{ success: boolean; count: number; error?: string }> => {
+    if (!isFirebaseConfigured || !db) {
+      const msg = 'Firebase is not initialized or configured.';
+      setLastCloudSyncStatus({ status: 'error', message: msg, timestamp: Date.now() });
+      return { success: false, count: 0, error: msg };
+    }
+
+    setLastCloudSyncStatus({
+      status: 'syncing',
+      message: 'Syncing all tables to Google Cloud Firestore...',
+      timestamp: Date.now(),
+    });
+
+    try {
+      let count = 0;
+
+      // 1. Batches
+      for (const batch of batches) {
+        await setDoc(doc(db, 'batches', batch.id), batch);
+        count++;
+      }
+
+      // 2. Schools
+      for (const school of schools) {
+        await setDoc(doc(db, 'schools', school.id), school);
+        count++;
+      }
+
+      // 3. Students
+      for (const student of students) {
+        await setDoc(doc(db, 'students', student.id), student);
+        count++;
+      }
+
+      // 4. Student Syllabi
+      for (const [studentId, syl] of Object.entries(syllabi)) {
+        await setDoc(doc(db, 'studentSyllabi', studentId), syl);
+        count++;
+      }
+
+      // 5. Class Sessions
+      for (const session of sessions) {
+        await setDoc(doc(db, 'classSessions', session.id), session);
+        count++;
+      }
+
+      // 6. Homeworks
+      for (const hw of homeworks) {
+        await setDoc(doc(db, 'homeworks', hw.id), hw);
+        count++;
+      }
+
+      // 7. Exams
+      for (const exam of exams) {
+        await setDoc(doc(db, 'exams', exam.id), exam);
+        count++;
+      }
+
+      // 8. Lecture Sheets
+      for (const sheet of sheets) {
+        await setDoc(doc(db, 'lectureSheets', sheet.id), sheet);
+        count++;
+      }
+
+      // 9. Bonus Logs
+      for (const log of bonusLogs) {
+        await setDoc(doc(db, 'bonusLogs', log.id), log);
+        count++;
+      }
+
+      // 10. Global Settings
+      await setDoc(doc(db, 'settings', 'global'), settings);
+      count++;
+
+      const successMsg = `Successfully pushed ${count} documents across 10 collections to Cloud Firestore! Refresh Firebase Console to view tables.`;
+      console.log(`[NPB Firebase] ${successMsg}`);
+      setLastCloudSyncStatus({ status: 'success', message: successMsg, timestamp: Date.now() });
+      return { success: true, count };
+    } catch (err: any) {
+      console.error('[NPB Firebase Push Error]:', err);
+      let errMsg = err?.message || 'Permission denied or network failure.';
+      if (err?.code === 'permission-denied') {
+        errMsg =
+          'Permission Denied: Cloud Firestore rejected write request. Please verify you published firestore.rules and signed in with Google as tushar.aman05@gmail.com.';
+      }
+      setLastCloudSyncStatus({ status: 'error', message: errMsg, timestamp: Date.now() });
+      return { success: false, count: 0, error: errMsg };
+    }
+  };
+
+  // Auto-sync initial data if Firestore is empty and user is logged in as tushar.aman05@gmail.com
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db || !auth) return;
+
+    const unsubAuth = auth.onAuthStateChanged(async (user: any) => {
+      if (user && user.email?.toLowerCase() === 'tushar.aman05@gmail.com' && db) {
+        try {
+          const snapshot = await getDocs(collection(db, 'batches'));
+          if (snapshot.empty && batches.length > 0) {
+            console.log('[NPB Firebase] Initial cloud database population triggered for tushar.aman05@gmail.com...');
+            await pushAllDataToFirestore();
+          }
+        } catch (err) {
+          console.info('[NPB Firebase] Auto-sync check:', err);
+        }
+      }
+    });
+
+    return () => unsubAuth();
+  }, [batches.length]);
+
   // --- Actions ---
 
   const saveBatch = async (batch: Batch) => {
@@ -241,14 +365,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return idx >= 0 ? prev.map((b) => (b.id === batch.id ? batch : b)) : [batch, ...prev];
     });
     if (isFirebaseConfigured && db) {
-      await setDoc(doc(db, 'batches', batch.id), batch);
+      try {
+        await setDoc(doc(db, 'batches', batch.id), batch);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveBatch]:', err.message);
+      }
     }
   };
 
   const deleteBatch = async (batchId: string) => {
     setBatches((prev) => prev.filter((b) => b.id !== batchId));
     if (isFirebaseConfigured && db) {
-      await deleteDoc(doc(db, 'batches', batchId));
+      try {
+        await deleteDoc(doc(db, 'batches', batchId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteBatch]:', err.message);
+      }
     }
   };
 
@@ -258,14 +390,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return idx >= 0 ? prev.map((s) => (s.id === school.id ? school : s)) : [school, ...prev];
     });
     if (isFirebaseConfigured && db) {
-      await setDoc(doc(db, 'schools', school.id), school);
+      try {
+        await setDoc(doc(db, 'schools', school.id), school);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveSchool]:', err.message);
+      }
     }
   };
 
   const deleteSchool = async (schoolId: string) => {
     setSchools((prev) => prev.filter((s) => s.id !== schoolId));
     if (isFirebaseConfigured && db) {
-      await deleteDoc(doc(db, 'schools', schoolId));
+      try {
+        await deleteDoc(doc(db, 'schools', schoolId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteSchool]:', err.message);
+      }
     }
   };
 
@@ -275,14 +415,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return idx >= 0 ? prev.map((s) => (s.id === student.id ? student : s)) : [student, ...prev];
     });
     if (isFirebaseConfigured && db) {
-      await setDoc(doc(db, 'students', student.id), student);
+      try {
+        await setDoc(doc(db, 'students', student.id), student);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveStudent]:', err.message);
+      }
     }
   };
 
   const deleteStudent = async (studentId: string) => {
     setStudents((prev) => prev.filter((s) => s.id !== studentId));
     if (isFirebaseConfigured && db) {
-      await deleteDoc(doc(db, 'students', studentId));
+      try {
+        await deleteDoc(doc(db, 'students', studentId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteStudent]:', err.message);
+      }
     }
   };
 
@@ -297,7 +445,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       [studentId]: updated,
     }));
     if (isFirebaseConfigured && db) {
-      await setDoc(doc(db, 'studentSyllabi', studentId), updated);
+      try {
+        await setDoc(doc(db, 'studentSyllabi', studentId), updated);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveStudentSyllabus]:', err.message);
+      }
     }
   };
 
@@ -327,7 +479,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (isFirebaseConfigured && db) {
-      await setDoc(doc(db, 'classSessions', session.id), session);
+      try {
+        await setDoc(doc(db, 'classSessions', session.id), session);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveClassSession]:', err.message);
+      }
     }
 
     // Automated Syllabus Sync for Topics Taught
@@ -373,7 +529,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             topics: newTopics,
           };
           if (isFirebaseConfigured && db) {
-            setDoc(doc(db, 'studentSyllabi', stuId), updatedSyllabi[stuId]);
+            try {
+              setDoc(doc(db, 'studentSyllabi', stuId), updatedSyllabi[stuId]);
+            } catch (err: any) {
+              console.warn('[NPB Firestore sync syllabus]:', err.message);
+            }
           }
         }
       });
@@ -399,7 +559,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteClassSession = async (sessionId: string) => {
     setSessions((prev) => prev.filter((s) => s.id !== sessionId));
     if (isFirebaseConfigured && db) {
-      await deleteDoc(doc(db, 'classSessions', sessionId));
+      try {
+        await deleteDoc(doc(db, 'classSessions', sessionId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteClassSession]:', err.message);
+      }
     }
   };
 
@@ -409,14 +573,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return idx >= 0 ? prev.map((h) => (h.id === homework.id ? homework : h)) : [homework, ...prev];
     });
     if (isFirebaseConfigured && db) {
-      await setDoc(doc(db, 'homeworks', homework.id), homework);
+      try {
+        await setDoc(doc(db, 'homeworks', homework.id), homework);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveHomework]:', err.message);
+      }
     }
   };
 
   const deleteHomework = async (hwId: string) => {
     setHomeworks((prev) => prev.filter((h) => h.id !== hwId));
     if (isFirebaseConfigured && db) {
-      await deleteDoc(doc(db, 'homeworks', hwId));
+      try {
+        await deleteDoc(doc(db, 'homeworks', hwId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteHomework]:', err.message);
+      }
     }
   };
 
@@ -434,7 +606,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         const updatedHw = { ...h, submissions: newSubmissions };
         if (isFirebaseConfigured && db) {
-          setDoc(doc(db, 'homeworks', h.id), updatedHw);
+          try {
+            setDoc(doc(db, 'homeworks', h.id), updatedHw);
+          } catch (err: any) {
+            console.warn('[NPB Firestore saveHomeworkSubmission]:', err.message);
+          }
         }
         return updatedHw;
       })
@@ -448,7 +624,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return idx >= 0 ? prev.map((e) => (e.id === exam.id ? exam : e)) : [exam, ...prev];
     });
     if (isFirebaseConfigured && db) {
-      await setDoc(doc(db, 'exams', exam.id), exam);
+      try {
+        await setDoc(doc(db, 'exams', exam.id), exam);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveExam]:', err.message);
+      }
     }
 
     // Analyze results for Weak Topics (< 60%) and update individual syllabi to Revision Needed
@@ -462,7 +642,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         let modified = false;
         const newTopics = studentSyl.topics.map((t) => {
-          // Check if this topic was tested in any section
           let sectionMarksObtained = 0;
           let sectionMaxMarks = 0;
           let wasTested = false;
@@ -494,7 +673,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             topics: newTopics,
           };
           if (isFirebaseConfigured && db) {
-            setDoc(doc(db, 'studentSyllabi', studentId), updatedSyllabi[studentId]);
+            try {
+              setDoc(doc(db, 'studentSyllabi', studentId), updatedSyllabi[studentId]);
+            } catch (err: any) {
+              console.warn('[NPB Firestore sync exam syllabus]:', err.message);
+            }
           }
         }
       });
@@ -506,7 +689,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteExam = async (examId: string) => {
     setExams((prev) => prev.filter((e) => e.id !== examId));
     if (isFirebaseConfigured && db) {
-      await deleteDoc(doc(db, 'exams', examId));
+      try {
+        await deleteDoc(doc(db, 'exams', examId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteExam]:', err.message);
+      }
     }
   };
 
@@ -516,7 +703,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return idx >= 0 ? prev.map((s) => (s.id === sheet.id ? sheet : s)) : [sheet, ...prev];
     });
     if (isFirebaseConfigured && db) {
-      await setDoc(doc(db, 'lectureSheets', sheet.id), sheet);
+      try {
+        await setDoc(doc(db, 'lectureSheets', sheet.id), sheet);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveLectureSheet]:', err.message);
+      }
     }
   };
 
@@ -531,7 +722,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           : [...received, studentId];
         const updatedSheet = { ...sh, receivedByStudentIds: updated };
         if (isFirebaseConfigured && db) {
-          setDoc(doc(db, 'lectureSheets', sh.id), updatedSheet);
+          try {
+            setDoc(doc(db, 'lectureSheets', sh.id), updatedSheet);
+          } catch (err: any) {
+            console.warn('[NPB Firestore toggleSheetDistributed]:', err.message);
+          }
         }
         return updatedSheet;
       })
@@ -541,13 +736,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteLectureSheet = async (sheetId: string) => {
     setSheets((prev) => prev.filter((s) => s.id !== sheetId));
     if (isFirebaseConfigured && db) {
-      await deleteDoc(doc(db, 'lectureSheets', sheetId));
+      try {
+        await deleteDoc(doc(db, 'lectureSheets', sheetId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteLectureSheet]:', err.message);
+      }
     }
   };
 
   const saveBonusLog = async (log: BonusLog) => {
     setBonusLogs((prev) => [log, ...prev]);
-    // update student's manualBonusPoints
     setStudents((prev) =>
       prev.map((s) =>
         s.id === log.studentId
@@ -556,7 +754,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       )
     );
     if (isFirebaseConfigured && db) {
-      await setDoc(doc(db, 'bonusLogs', log.id), log);
+      try {
+        await setDoc(doc(db, 'bonusLogs', log.id), log);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveBonusLog]:', err.message);
+      }
     }
   };
 
@@ -573,7 +775,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setBonusLogs((prev) => prev.filter((l) => l.id !== logId));
     if (isFirebaseConfigured && db) {
-      await deleteDoc(doc(db, 'bonusLogs', logId));
+      try {
+        await deleteDoc(doc(db, 'bonusLogs', logId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteBonusLog]:', err.message);
+      }
     }
   };
 
@@ -581,7 +787,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSettings((prev) => {
       const merged = { ...prev, ...newSettings };
       if (isFirebaseConfigured && db) {
-        setDoc(doc(db, 'settings', 'global'), merged);
+        try {
+          setDoc(doc(db, 'settings', 'global'), merged);
+        } catch (err: any) {
+          console.warn('[NPB Firestore updateSettings]:', err.message);
+        }
       }
       return merged;
     });
@@ -663,7 +873,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let addedCount = 0;
     const newStudents: Student[] = [];
 
-    // Skip header line if it starts with name/roll
     const startIndex = lines[0].toLowerCase().includes('name') ? 1 : 0;
 
     for (let i = startIndex; i < lines.length; i++) {
@@ -726,6 +935,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         bonusLogs,
         settings,
         isLoading,
+        lastCloudSyncStatus,
         saveBatch,
         deleteBatch,
         saveSchool,
@@ -747,6 +957,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveBonusLog,
         deleteBonusLog,
         updateSettings,
+        pushAllDataToFirestore,
         loadDemoData,
         clearAllData,
         exportDatabaseJson,

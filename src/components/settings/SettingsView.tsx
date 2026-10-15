@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
 import { useModal } from '../../context/ModalContext';
+import { useAuth, PRIMARY_ADMIN_EMAIL, isAuthorizedAdmin } from '../../context/AuthContext';
 import {
   Download,
   Upload,
@@ -12,6 +13,15 @@ import {
   Sparkles,
   Check,
   Save,
+  Cloud,
+  UploadCloud,
+  ShieldCheck,
+  Copy,
+  ExternalLink,
+  AlertCircle,
+  Database,
+  Code,
+  X,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -23,8 +33,14 @@ export const SettingsView: React.FC = () => {
     exportDatabaseJson,
     importDatabaseJson,
     importStudentsCsv,
+    pushAllDataToFirestore,
+    lastCloudSyncStatus,
     batches,
+    schools,
+    students,
   } = useData();
+
+  const { currentUser } = useAuth();
   const { confirm, alert } = useModal();
 
   // Branding states
@@ -32,6 +48,11 @@ export const SettingsView: React.FC = () => {
   const [tutorName, setTutorName] = useState(settings.tutorName || 'Abdullah All Masum');
   const [whatsappNumber, setWhatsappNumber] = useState(settings.whatsappNumber || '01619663933');
   const [savedBranding, setSavedBranding] = useState(false);
+
+  // Cloud Sync state
+  const [isPushing, setIsPushing] = useState(false);
+  const [showRulesModal, setShowRulesModal] = useState(false);
+  const [copiedRules, setCopiedRules] = useState(false);
 
   // CSV Import state
   const [csvText, setCsvText] = useState('');
@@ -48,6 +69,51 @@ export const SettingsView: React.FC = () => {
     });
     setSavedBranding(true);
     setTimeout(() => setSavedBranding(false), 2000);
+  };
+
+  // Push all local data into Cloud Firestore
+  const handlePushToFirestore = async () => {
+    setIsPushing(true);
+    const res = await pushAllDataToFirestore();
+    setIsPushing(false);
+
+    if (res.success) {
+      await alert({
+        title: 'Cloud Database Synchronized!',
+        message: `Successfully uploaded ${res.count} records across all 10 collections into Google Cloud Firestore (batchmgt-6f7ad). You can now refresh your Firebase Console to see all database tables populated!`,
+        variant: 'success',
+      });
+    } else {
+      await alert({
+        title: 'Cloud Synchronization Failed',
+        message: `${res.error}\n\nTo resolve this: Ensure you have pasted the security rules into your Firebase Console (Rules tab) and signed in with Google as ${PRIMARY_ADMIN_EMAIL}.`,
+        variant: 'danger',
+      });
+    }
+  };
+
+  const firestoreRulesText = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // STRICT ADMIN ACCESS: Only ${PRIMARY_ADMIN_EMAIL} can write
+    function isTusharAdmin() {
+      return request.auth != null && 
+        request.auth.token.email.lower() == "${PRIMARY_ADMIN_EMAIL}";
+    }
+
+    // Public read for platform branding & portals, admin-only write
+    match /{document=**} {
+      allow read: if true;
+      allow write: if isTusharAdmin();
+    }
+  }
+}`;
+
+  const handleCopyRules = () => {
+    navigator.clipboard.writeText(firestoreRulesText);
+    setCopiedRules(true);
+    setTimeout(() => setCopiedRules(false), 2500);
   };
 
   // 1-Click Full Database JSON Backup
@@ -104,7 +170,7 @@ export const SettingsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-16">
       {/* Header */}
       <div className="bg-white dark:bg-dark-surface p-5 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs">
         <div className="flex items-center gap-2">
@@ -113,14 +179,150 @@ export const SettingsView: React.FC = () => {
           </span>
           <div>
             <h1 className="text-xl font-black text-slate-900 dark:text-white">
-              System Settings, CSV Import & Full Database Backups
+              System Settings, Cloud Firestore & Database Management
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Manage tutor identity, bulk CSV onboarding, JSON offline snapshots, and demo reset.
+              Live Google Cloud Firestore synchronization, security rules, CSV onboarding, and database backups.
             </p>
           </div>
         </div>
       </div>
+
+      {/* Cloud Firestore Live Database Sync & Status Card */}
+      <div className="bg-white dark:bg-dark-surface p-5 sm:p-6 rounded-2xl border border-light-indigo/30 dark:border-light-indigo/20 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-light-indigo/10 text-light-indigo dark:text-neon-blue">
+              <Cloud className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
+                  Google Cloud Firestore Database
+                </h3>
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-weird-green/20 text-emerald-800 dark:text-wintergreen">
+                  batchmgt-6f7ad
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Synchronizes batches, schools, students, syllabi, class sessions, and exams in real-time.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowRulesModal(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700"
+            >
+              <Code className="w-3.5 h-3.5" />
+              <span>Copy Security Rules</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePushToFirestore}
+              disabled={isPushing}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black bg-weird-green text-slate-950 hover:bg-wintergreen shadow-md shadow-weird-green/20 transition-transform active:scale-95 disabled:opacity-50"
+            >
+              <UploadCloud className={`w-4 h-4 ${isPushing ? 'animate-bounce' : ''}`} />
+              <span>{isPushing ? 'Uploading to Cloud...' : 'Push All Data to Cloud Firestore'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Diagnostic Status Strip */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Firebase Auth State</span>
+            <span className="font-bold text-xs text-slate-800 dark:text-white truncate block">
+              {currentUser?.email || 'Not Signed In via Google'}
+            </span>
+          </div>
+
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Admin Access Control</span>
+            <span className={`font-bold text-xs flex items-center gap-1.5 ${currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase() ? 'text-emerald-600 dark:text-wintergreen' : 'text-radiant-yellow'}`}>
+              <ShieldCheck className="w-3.5 h-3.5" />
+              {currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase()
+                ? 'Owner Verified (tushar.aman05@gmail.com)'
+                : 'Local Dev Mode (Sign in with Google for Cloud Writes)'}
+            </span>
+          </div>
+
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Local Data Ready to Sync</span>
+            <span className="font-bold text-xs text-slate-800 dark:text-white">
+              {batches.length} Batches • {schools.length} Schools • {students.length} Students
+            </span>
+          </div>
+        </div>
+
+        {/* Sync Log Message Banner */}
+        {lastCloudSyncStatus && (
+          <div
+            className={`p-3 rounded-xl text-xs flex items-start gap-2 border ${
+              lastCloudSyncStatus.status === 'success'
+                ? 'bg-weird-green/10 border-weird-green/30 text-emerald-900 dark:text-wintergreen'
+                : lastCloudSyncStatus.status === 'error'
+                ? 'bg-light-red/10 border-light-red/30 text-red-800 dark:text-light-red'
+                : 'bg-light-indigo/10 border-light-indigo/30 text-light-indigo dark:text-neon-blue'
+            }`}
+          >
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold">Cloud Sync Status: </span>
+              <span>{lastCloudSyncStatus.message}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Security Rules Modal */}
+      {showRulesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+          <div className="w-full max-w-xl bg-white dark:bg-dark-surface rounded-2xl border border-slate-200 dark:border-dark-border shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-weird-green" />
+                <h3 className="font-black text-base text-slate-900 dark:text-white">
+                  Firestore Security Rules for {PRIMARY_ADMIN_EMAIL}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRulesModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              Paste these rules into your <strong>Firebase Console &gt; Cloud Firestore &gt; Rules</strong> tab and click <strong>Publish</strong>. This strictly grants write access exclusively to <strong>{PRIMARY_ADMIN_EMAIL}</strong> while enabling public read for leaderboards and guardian reports.
+            </p>
+
+            <pre className="p-3.5 rounded-xl bg-slate-900 text-slate-200 text-xs font-mono overflow-x-auto max-h-56">
+              {firestoreRulesText}
+            </pre>
+
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-[11px] text-slate-400">
+                Project ID: <code>batchmgt-6f7ad</code>
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyRules}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-light-indigo text-white hover:bg-light-slate-blue shadow-xs"
+              >
+                {copiedRules ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedRules ? 'Copied to Clipboard!' : 'Copy Rules to Clipboard'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tutor Profile & Identity Settings */}
       <div className="bg-white dark:bg-dark-surface p-5 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-4">
@@ -129,7 +331,7 @@ export const SettingsView: React.FC = () => {
             Tutor Branding & Contact Configuration
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Used across Guardian Report Cards, PDF exports, and headers. (Tagline is disabled per domain rule).
+            Used across Guardian Report Cards, PDF exports, and headers.
           </p>
         </div>
 
@@ -294,7 +496,7 @@ Nuzhat Tabassum, HSC-02, Holy Cross College, HSC 1st Year, 01819876543, Batch 1"
               <span>Demo Seed Data & Data Reset</span>
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Populate with 4 realistic batches, prestigious Dhaka schools, syllabi & exam analytics for instant testing.
+              Populate with realistic batches, Dhaka schools, syllabi & exam analytics for instant testing.
             </p>
           </div>
 
@@ -304,7 +506,7 @@ Nuzhat Tabassum, HSC-02, Holy Cross College, HSC 1st Year, 01819876543, Batch 1"
               onClick={async () => {
                 const ok = await confirm({
                   title: 'Load Realistic Demo Data',
-                  message: 'Load realistic demo data (4 Batches, Dhaka schools, curriculum syllabi, and sample student records)?',
+                  message: 'Load realistic demo data (Batches, Dhaka schools, curriculum syllabi, and sample student records)?',
                   confirmText: 'Yes, Load Demo Data',
                   cancelText: 'Cancel',
                   variant: 'info',
@@ -321,7 +523,7 @@ Nuzhat Tabassum, HSC-02, Holy Cross College, HSC 1st Year, 01819876543, Batch 1"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-bright-lilac/20 text-purple-900 dark:text-bright-lilac hover:bg-bright-lilac/30 border border-bright-lilac/30"
             >
               <RefreshCw className="w-4 h-4" />
-              <span>Load Realistic Demo Data (4 Batches)</span>
+              <span>Load Realistic Demo Data</span>
             </button>
 
             <button
