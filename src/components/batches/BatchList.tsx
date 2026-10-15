@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
+import { useModal } from '../../context/ModalContext';
 import { Batch } from '../../types/models';
 import { BatchFormModal } from './BatchFormModal';
 import {
@@ -20,6 +21,7 @@ const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const BatchList: React.FC = () => {
   const { batches, students, saveBatch, deleteBatch } = useData();
+  const { confirm } = useModal();
   const navigate = useNavigate();
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -35,7 +37,15 @@ export const BatchList: React.FC = () => {
   };
 
   const handleDelete = async (batchId: string, batchName: string) => {
-    if (confirm(`Are you sure you want to delete batch "${batchName}"? Enrolled students will remain in the database.`)) {
+    const ok = await confirm({
+      title: 'Delete Batch',
+      message: `Are you sure you want to delete batch "${batchName}"? Enrolled students will remain in the database without an assigned batch.`,
+      confirmText: 'Yes, Delete Batch',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (ok) {
       await deleteBatch(batchId);
     }
   };

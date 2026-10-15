@@ -10,6 +10,7 @@ import {
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
+import { ModalProvider } from './context/ModalContext';
 
 // Components
 import { Navbar } from './components/common/Navbar';
@@ -69,38 +70,40 @@ export function App() {
     <ThemeProvider>
       <AuthProvider>
         <DataProvider>
-          <Router>
-            <Routes>
-              {/* Public Dedicated Homepage */}
-              <Route path="/" element={<HomeLandingView />} />
+          <ModalProvider>
+            <Router>
+              <Routes>
+                {/* Public Dedicated Homepage */}
+                <Route path="/" element={<HomeLandingView />} />
 
-              {/* Public Portals */}
-              <Route path="/leaderboard" element={<PublicLeaderboardView />} />
-              <Route path="/report/:shareToken" element={<GuardianReportView />} />
-              <Route path="/login" element={<AdminLogin />} />
+                {/* Public Portals */}
+                <Route path="/leaderboard" element={<PublicLeaderboardView />} />
+                <Route path="/report/:shareToken" element={<GuardianReportView />} />
+                <Route path="/login" element={<AdminLogin />} />
 
-              {/* Admin Protected Routes */}
-              <Route path="/admin" element={<AdminLayout />}>
-                <Route index element={<Navigate to="/admin/dashboard" replace />} />
-                <Route path="dashboard" element={<DashboardView />} />
-                <Route path="live-class" element={<LiveClassSession />} />
-                <Route path="batches" element={<BatchList />} />
-                <Route path="students" element={<StudentDirectory />} />
-                <Route path="homework" element={<HomeworkManager />} />
-                <Route path="exams" element={<ExamManager />} />
-                {/* Tutor Tools */}
-                <Route path="tools" element={<WeakTopicRadar />} />
-                <Route path="tools/weak-topics" element={<WeakTopicRadar />} />
-                <Route path="tools/makeup" element={<MakeupPlanner />} />
-                <Route path="tools/sheets" element={<LectureSheetTracker />} />
-                <Route path="leaderboard-settings" element={<AdminLeaderboardControl />} />
-                <Route path="settings" element={<SettingsView />} />
-              </Route>
+                {/* Admin Protected Routes */}
+                <Route path="/admin" element={<AdminLayout />}>
+                  <Route index element={<Navigate to="/admin/dashboard" replace />} />
+                  <Route path="dashboard" element={<DashboardView />} />
+                  <Route path="live-class" element={<LiveClassSession />} />
+                  <Route path="batches" element={<BatchList />} />
+                  <Route path="students" element={<StudentDirectory />} />
+                  <Route path="homework" element={<HomeworkManager />} />
+                  <Route path="exams" element={<ExamManager />} />
+                  {/* Tutor Tools */}
+                  <Route path="tools" element={<WeakTopicRadar />} />
+                  <Route path="tools/weak-topics" element={<WeakTopicRadar />} />
+                  <Route path="tools/makeup" element={<MakeupPlanner />} />
+                  <Route path="tools/sheets" element={<LectureSheetTracker />} />
+                  <Route path="leaderboard-settings" element={<AdminLeaderboardControl />} />
+                  <Route path="settings" element={<SettingsView />} />
+                </Route>
 
-              {/* Catch-all fallback */}
-              <Route path="*" element={<HomeLandingView />} />
-            </Routes>
-          </Router>
+                {/* Catch-all fallback */}
+                <Route path="*" element={<HomeLandingView />} />
+              </Routes>
+            </Router>
+          </ModalProvider>
         </DataProvider>
       </AuthProvider>
     </ThemeProvider>

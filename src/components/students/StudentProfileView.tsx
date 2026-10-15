@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Student } from '../../types/models';
 import { useData } from '../../context/DataContext';
+import { useModal } from '../../context/ModalContext';
 import { SyllabusManager } from './SyllabusManager';
 import { calculateStudentAnalytics } from '../../lib/performanceMath';
 import { createWhatsAppLink, WhatsAppTemplates, getReportShareUrl } from '../../lib/whatsappTemplates';
@@ -32,6 +33,7 @@ interface StudentProfileViewProps {
 
 export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student, onBack }) => {
   const { batches, sessions, homeworks, exams, sheets, syllabi, saveStudent, saveBonusLog } = useData();
+  const { confirm, alert } = useModal();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'syllabus' | 'attendance' | 'homework' | 'exams'>('overview');
@@ -74,9 +76,22 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student,
   };
 
   const handleRegenerateToken = async () => {
-    if (confirm('Regenerate secret report link? The previous link shared with guardian will stop working.')) {
+    const ok = await confirm({
+      title: 'Regenerate Secret Link',
+      message: 'Regenerate secret report link? The previous link shared with guardian will stop working immediately.',
+      confirmText: 'Yes, Regenerate Link',
+      cancelText: 'Cancel',
+      variant: 'warning',
+    });
+
+    if (ok) {
       const newToken = `npb-${Math.random().toString(36).substring(2, 10)}`;
       await saveStudent({ ...student, shareToken: newToken });
+      await alert({
+        title: 'New Link Generated',
+        message: 'A new secret report link has been created and saved.',
+        variant: 'success',
+      });
     }
   };
 

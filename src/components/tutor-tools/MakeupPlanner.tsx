@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
+import { useModal } from '../../context/ModalContext';
 import { Student, StudentSyllabusTopic } from '../../types/models';
 import { createWhatsAppLink, WhatsAppTemplates } from '../../lib/whatsappTemplates';
 import {
@@ -17,6 +18,7 @@ import {
 
 export const MakeupPlanner: React.FC = () => {
   const { students, batches, syllabi, saveStudentSyllabus } = useData();
+  const { confirm, alert } = useModal();
 
   // Find all students who have missed topics
   const topicMissedMap: Record<
@@ -58,11 +60,15 @@ export const MakeupPlanner: React.FC = () => {
 
   // Mark Completed
   const handleMarkMakeupDone = async (topicTitle: string, stuList: { student: Student; topicId: string }[]) => {
-    if (
-      confirm(
-        `Mark makeup class completed for topic "${topicTitle}" for all ${stuList.length} students? Their syllabus statuses will update to Completed.`
-      )
-    ) {
+    const ok = await confirm({
+      title: 'Complete Makeup Session',
+      message: `Mark makeup class completed for topic "${topicTitle}" for all ${stuList.length} students? Their individual syllabus statuses will update to Completed.`,
+      confirmText: 'Yes, Complete Makeup',
+      cancelText: 'Cancel',
+      variant: 'success',
+    });
+
+    if (ok) {
       for (const item of stuList) {
         const syl = syllabi[item.student.id];
         if (syl?.topics) {
@@ -78,11 +84,16 @@ export const MakeupPlanner: React.FC = () => {
           await saveStudentSyllabus(item.student.id, updated);
         }
       }
+      await alert({
+        title: 'Makeup Recorded',
+        message: `Makeup class completed for ${stuList.length} students! Syllabi updated successfully.`,
+        variant: 'success',
+      });
     }
   };
 
   // WhatsApp Alert dispatch for combined makeup
-  const handleSendCombinedWhatsApp = (topicTitle: string, stuList: { student: Student; topicId: string }[]) => {
+  const handleSendCombinedWhatsApp = async (topicTitle: string, stuList: { student: Student; topicId: string }[]) => {
     const studentNames = stuList.map((s) => s.student.name);
     const msg = WhatsAppTemplates.makeupSessionAlert(
       topicTitle,
@@ -91,9 +102,13 @@ export const MakeupPlanner: React.FC = () => {
       studentNames
     );
 
-    // Open first student's guardian WhatsApp as direct dispatch or copy
-    navigator.clipboard.writeText(msg);
-    alert(`Copied combined WhatsApp makeup notice to clipboard for:\n${studentNames.join(', ')}\n\nPaste in batch or group chat.`);
+    // Copy to clipboard
+    await navigator.clipboard.writeText(msg);
+    await alert({
+      title: 'WhatsApp Notice Copied',
+      message: `Combined makeup notice copied to clipboard for:\n${studentNames.join(', ')}\n\nYou can now paste it directly into your WhatsApp batch or group chat.`,
+      variant: 'success',
+    });
   };
 
   return (

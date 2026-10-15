@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
+import { useModal } from '../../context/ModalContext';
 import { Exam, ExamSection } from '../../types/models';
 import { ExamMarksEntry } from './ExamMarksEntry';
 import { ExamSectionBuilder } from './ExamSectionBuilder';
@@ -18,6 +19,7 @@ import {
 
 export const ExamManager: React.FC = () => {
   const { batches, students, schools, exams, syllabi, saveExam, deleteExam } = useData();
+  const { confirm } = useModal();
 
   const [selectedBatchId, setSelectedBatchId] = useState<string>(batches[0]?.id || '');
   const [activeMarksExam, setActiveMarksExam] = useState<Exam | null>(null);
@@ -97,7 +99,15 @@ export const ExamManager: React.FC = () => {
   };
 
   const handleDelete = async (examId: string, title: string) => {
-    if (confirm(`Delete exam "${title}"? All student marks for this test will be removed.`)) {
+    const ok = await confirm({
+      title: 'Delete Exam',
+      message: `Delete exam "${title}"? All recorded student scores and section breakdowns for this exam will be permanently removed.`,
+      confirmText: 'Yes, Delete Exam',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (ok) {
       await deleteExam(examId);
     }
   };

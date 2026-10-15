@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
+import { useModal } from '../../context/ModalContext';
 import { LectureSheet } from '../../types/models';
 import {
   FileSpreadsheet,
@@ -15,6 +16,7 @@ import {
 export const LectureSheetTracker: React.FC = () => {
   const { batches, students, sheets, saveLectureSheet, toggleSheetDistributed, deleteLectureSheet } =
     useData();
+  const { confirm } = useModal();
 
   const [selectedBatchId, setSelectedBatchId] = useState<string>(batches[0]?.id || '');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -55,7 +57,15 @@ export const LectureSheetTracker: React.FC = () => {
   };
 
   const handleDelete = async (sheetId: string, title: string) => {
-    if (confirm(`Delete lecture sheet record "${title}"?`)) {
+    const ok = await confirm({
+      title: 'Delete Lecture Sheet',
+      message: `Delete lecture sheet record "${title}"? Distribution logs for this sheet will be deleted.`,
+      confirmText: 'Yes, Delete Sheet',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (ok) {
       await deleteLectureSheet(sheetId);
     }
   };

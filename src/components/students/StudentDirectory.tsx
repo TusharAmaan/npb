@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
+import { useModal } from '../../context/ModalContext';
 import { Student } from '../../types/models';
 import { StudentProfileView } from './StudentProfileView';
 import { getReportShareUrl } from '../../lib/whatsappTemplates';
@@ -21,6 +22,7 @@ import {
 
 export const StudentDirectory: React.FC = () => {
   const { students, batches, schools, saveStudent, deleteStudent } = useData();
+  const { confirm } = useModal();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -81,7 +83,15 @@ export const StudentDirectory: React.FC = () => {
   };
 
   const handleDelete = async (studentId: string, studentName: string) => {
-    if (confirm(`Are you sure you want to remove "${studentName}" from the student directory?`)) {
+    const ok = await confirm({
+      title: 'Remove Student',
+      message: `Are you sure you want to remove "${studentName}" from the student directory? All enrolled attendance and syllabus records will be unlinked.`,
+      confirmText: 'Yes, Remove Student',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (ok) {
       await deleteStudent(studentId);
       if (selectedStudent?.id === studentId) {
         setSelectedStudent(null);

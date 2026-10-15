@@ -6,6 +6,7 @@ import {
   SyllabusTopicStatus,
 } from '../../types/models';
 import { useData } from '../../context/DataContext';
+import { useModal } from '../../context/ModalContext';
 import {
   Plus,
   Copy,
@@ -61,6 +62,7 @@ const STATUS_CONFIG: Record<
 
 export const SyllabusManager: React.FC<SyllabusManagerProps> = ({ student }) => {
   const { syllabi, students, saveStudentSyllabus, cloneSyllabus } = useData();
+  const { confirm } = useModal();
 
   const studentSyllabus = syllabi[student.id] || {
     studentId: student.id,
@@ -128,11 +130,15 @@ export const SyllabusManager: React.FC<SyllabusManagerProps> = ({ student }) => 
   const handleClone = async () => {
     if (!cloneSourceId) return;
     const sourceStudent = students.find((s) => s.id === cloneSourceId);
-    if (
-      confirm(
-        `Clone complete syllabus structure from ${sourceStudent?.name}? This will duplicate topics and reset their statuses for ${student.name}.`
-      )
-    ) {
+    const ok = await confirm({
+      title: 'Clone Syllabus Structure',
+      message: `Clone complete syllabus structure from ${sourceStudent?.name}? This will duplicate topics and reset their statuses for ${student.name}.`,
+      confirmText: 'Yes, Clone Syllabus',
+      cancelText: 'Cancel',
+      variant: 'info',
+    });
+
+    if (ok) {
       await cloneSyllabus(cloneSourceId, student.id);
       setCloneSourceId('');
     }

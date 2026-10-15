@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
+import { useModal } from '../../context/ModalContext';
 import {
   Download,
   Upload,
@@ -24,6 +25,7 @@ export const SettingsView: React.FC = () => {
     importStudentsCsv,
     batches,
   } = useData();
+  const { confirm, alert } = useModal();
 
   // Branding states
   const [platformName, setPlatformName] = useState(settings.platformName || 'NPB');
@@ -68,14 +70,22 @@ export const SettingsView: React.FC = () => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const content = event.target?.result as string;
       if (content) {
         const success = importDatabaseJson(content);
         if (success) {
-          alert('Database restored successfully from JSON backup!');
+          await alert({
+            title: 'Backup Restored',
+            message: 'Database restored successfully from JSON backup snapshot!',
+            variant: 'success',
+          });
         } else {
-          alert('Failed to parse backup JSON file. Ensure it is a valid NPB database export.');
+          await alert({
+            title: 'Restore Failed',
+            message: 'Failed to parse backup JSON file. Ensure it is a valid NPB database export.',
+            variant: 'danger',
+          });
         }
       }
     };
@@ -291,10 +301,21 @@ Nuzhat Tabassum, HSC-02, Holy Cross College, HSC 1st Year, 01819876543, Batch 1"
           <div className="flex flex-col sm:flex-row items-center gap-3">
             <button
               type="button"
-              onClick={() => {
-                if (confirm('Load realistic demo data for Abdullah All Masum (4 Batches, Dhaka schools, syllabi)?')) {
+              onClick={async () => {
+                const ok = await confirm({
+                  title: 'Load Realistic Demo Data',
+                  message: 'Load realistic demo data (4 Batches, Dhaka schools, curriculum syllabi, and sample student records)?',
+                  confirmText: 'Yes, Load Demo Data',
+                  cancelText: 'Cancel',
+                  variant: 'info',
+                });
+                if (ok) {
                   loadDemoData();
-                  alert('Realistic demo data loaded successfully!');
+                  await alert({
+                    title: 'Demo Data Loaded',
+                    message: 'Realistic demo data loaded successfully! Batches and students are ready for inspection.',
+                    variant: 'success',
+                  });
                 }
               }}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-bright-lilac/20 text-purple-900 dark:text-bright-lilac hover:bg-bright-lilac/30 border border-bright-lilac/30"
@@ -305,10 +326,21 @@ Nuzhat Tabassum, HSC-02, Holy Cross College, HSC 1st Year, 01819876543, Batch 1"
 
             <button
               type="button"
-              onClick={() => {
-                if (confirm('⚠️ WARNING: Clear all data? This will empty all batches, students, sessions, and exams.')) {
+              onClick={async () => {
+                const ok = await confirm({
+                  title: 'Clear All Database Collections',
+                  message: '⚠️ WARNING: Clear all data? This will empty all batches, students, sessions, exams, and lecture sheets.',
+                  confirmText: 'Yes, Clear All Data',
+                  cancelText: 'Cancel',
+                  variant: 'danger',
+                });
+                if (ok) {
                   clearAllData();
-                  alert('All database collections have been cleared.');
+                  await alert({
+                    title: 'Database Reset',
+                    message: 'All local and cloud database collections have been cleared.',
+                    variant: 'warning',
+                  });
                 }
               }}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-light-red/10 text-red-700 dark:text-light-red hover:bg-light-red/20 border border-light-red/20"
