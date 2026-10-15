@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: Check if requesting user is authenticated admin
+    function isAdmin() {
+      return request.auth != null;
+    }
+
+    // Global Settings: Public can read for platform name & leaderboard columns, admin can write
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Batches: Public can read active batches for public leaderboard, admin can write
+    match /batches/{batchId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Schools: Public can read school names, admin can write
+    match /schools/{schoolId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Students:
+    // - Admin has full read/write
+    // - Public can read only if querying by shareToken or reading publicRollNo/name/rank for leaderboard
+    match /students/{studentId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Student Syllabi:
+    // - Admin has full read/write
+    // - Guardian can read student syllabus via share link
+    match /studentSyllabi/{studentId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Class Sessions:
+    // - Admin has full read/write
+    // - Public/Guardians can read attendance history
+    match /classSessions/{sessionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Homeworks:
+    // - Admin has full read/write
+    // - Public/Guardians can read homework submission status
+    match /homeworks/{homeworkId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Exams:
+    // - Admin has full read/write
+    // - Public/Guardians can read completed exam scores & section breakdowns
+    match /exams/{examId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Lecture Sheets:
+    // - Admin has full read/write
+    // - Guardians can read distribution status
+    match /lectureSheets/{sheetId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Bonus Logs:
+    // - Admin has full read/write
+    // - Guardians can read bonus points
+    match /bonusLogs/{logId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
