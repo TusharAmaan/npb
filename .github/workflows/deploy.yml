@@ -34,6 +34,14 @@ jobs:
         run: npm install
 
       - name: Build Application
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN || 'batchmgt-6f7ad.firebaseapp.com' }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID || 'batchmgt-6f7ad' }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET || 'batchmgt-6f7ad.firebasestorage.app' }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID || '116589525906' }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID || '1:116589525906:web:ff570f04e47e0bc6b41f4b' }}
+          VITE_ADMIN_EMAILS: ${{ vars.VITE_ADMIN_EMAILS || 'tushar.aman05@gmail.com' }}
         run: npm run build
 
       - name: Setup Pages

@@ -32,6 +32,8 @@ import {
   setDoc,
   deleteDoc,
   onSnapshot,
+  QuerySnapshot,
+  DocumentData,
 } from 'firebase/firestore';
 
 interface DataContextType {
@@ -146,48 +148,76 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isFirebaseConfigured || !db) return;
 
     try {
-      const unsubBatches = onSnapshot(collection(db, 'batches'), (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((d) => d.data() as Batch);
-          setBatches(list);
-        }
-      });
-      const unsubSchools = onSnapshot(collection(db, 'schools'), (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((d) => d.data() as School);
-          setSchools(list);
-        }
-      });
-      const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((d) => d.data() as Student);
-          setStudents(list);
-        }
-      });
-      const unsubSessions = onSnapshot(collection(db, 'classSessions'), (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((d) => d.data() as ClassSession);
-          setSessions(list);
-        }
-      });
-      const unsubHomeworks = onSnapshot(collection(db, 'homeworks'), (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((d) => d.data() as Homework);
-          setHomeworks(list);
-        }
-      });
-      const unsubExams = onSnapshot(collection(db, 'exams'), (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((d) => d.data() as Exam);
-          setExams(list);
-        }
-      });
-      const unsubSheets = onSnapshot(collection(db, 'lectureSheets'), (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map((d) => d.data() as LectureSheet);
-          setSheets(list);
-        }
-      });
+      const unsubBatches = onSnapshot(
+        collection(db, 'batches'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as Batch);
+            setBatches(list);
+          }
+        },
+        (err) => console.info('[NPB Data] Batches cloud sync:', err.message)
+      );
+      const unsubSchools = onSnapshot(
+        collection(db, 'schools'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as School);
+            setSchools(list);
+          }
+        },
+        (err) => console.info('[NPB Data] Schools cloud sync:', err.message)
+      );
+      const unsubStudents = onSnapshot(
+        collection(db, 'students'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as Student);
+            setStudents(list);
+          }
+        },
+        (err) => console.info('[NPB Data] Students cloud sync:', err.message)
+      );
+      const unsubSessions = onSnapshot(
+        collection(db, 'classSessions'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as ClassSession);
+            setSessions(list);
+          }
+        },
+        (err) => console.info('[NPB Data] Sessions cloud sync:', err.message)
+      );
+      const unsubHomeworks = onSnapshot(
+        collection(db, 'homeworks'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as Homework);
+            setHomeworks(list);
+          }
+        },
+        (err) => console.info('[NPB Data] Homeworks cloud sync:', err.message)
+      );
+      const unsubExams = onSnapshot(
+        collection(db, 'exams'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as Exam);
+            setExams(list);
+          }
+        },
+        (err) => console.info('[NPB Data] Exams cloud sync:', err.message)
+      );
+      const unsubSheets = onSnapshot(
+        collection(db, 'lectureSheets'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as LectureSheet);
+            setSheets(list);
+          }
+        },
+        (err) => console.info('[NPB Data] Sheets cloud sync:', err.message)
+      );
 
       return () => {
         unsubBatches();

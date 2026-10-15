@@ -2,83 +2,66 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: Check if requesting user is authenticated admin
-    function isAdmin() {
-      return request.auth != null;
+    // Helper: Only tushar.aman05@gmail.com is granted admin access
+    function isTusharAdmin() {
+      return request.auth != null && 
+        request.auth.token.email.lower() == "tushar.aman05@gmail.com";
     }
 
-    // Global Settings: Public can read for platform name & leaderboard columns, admin can write
+    // Settings: Public can read platform name & theme, only tushar.aman05@gmail.com can write
     match /settings/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isTusharAdmin();
     }
 
-    // Batches: Public can read active batches for public leaderboard, admin can write
+    // Batches: Only tushar.aman05@gmail.com has access
     match /batches/{batchId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isTusharAdmin();
     }
 
-    // Schools: Public can read school names, admin can write
+    // Schools: Only tushar.aman05@gmail.com has access
     match /schools/{schoolId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isTusharAdmin();
     }
 
-    // Students:
-    // - Admin has full read/write
-    // - Public can read only if querying by shareToken or reading publicRollNo/name/rank for leaderboard
+    // Students: Private student records, only tushar.aman05@gmail.com can access
     match /students/{studentId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isTusharAdmin();
     }
 
-    // Student Syllabi:
-    // - Admin has full read/write
-    // - Guardian can read student syllabus via share link
+    // Student Syllabi: Only tushar.aman05@gmail.com can access
     match /studentSyllabi/{studentId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isTusharAdmin();
     }
 
-    // Class Sessions:
-    // - Admin has full read/write
-    // - Public/Guardians can read attendance history
+    // Class Sessions & Attendance: Only tushar.aman05@gmail.com can access
     match /classSessions/{sessionId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isTusharAdmin();
     }
 
-    // Homeworks:
-    // - Admin has full read/write
-    // - Public/Guardians can read homework submission status
+    // Homeworks: Only tushar.aman05@gmail.com can access
     match /homeworks/{homeworkId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isTusharAdmin();
     }
 
-    // Exams:
-    // - Admin has full read/write
-    // - Public/Guardians can read completed exam scores & section breakdowns
+    // Exams: Only tushar.aman05@gmail.com can access
     match /exams/{examId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isTusharAdmin();
     }
 
-    // Lecture Sheets:
-    // - Admin has full read/write
-    // - Guardians can read distribution status
+    // Lecture Sheets: Only tushar.aman05@gmail.com can access
     match /lectureSheets/{sheetId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isTusharAdmin();
     }
 
-    // Bonus Logs:
-    // - Admin has full read/write
-    // - Guardians can read bonus points
+    // Bonus Logs: Only tushar.aman05@gmail.com can access
     match /bonusLogs/{logId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isTusharAdmin();
+    }
+
+    // Catch-all: Deny all reads & writes unless authenticated as tushar.aman05@gmail.com
+    match /{document=**} {
+      allow read, write: if isTusharAdmin();
     }
   }
 }

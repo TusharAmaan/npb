@@ -8,8 +8,8 @@ export const AdminLogin: React.FC = () => {
   const { signInGoogle, signInEmail, devLoginAsAdmin, isAdmin } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState('abdullahallmasum@npb.edu');
-  const [password, setPassword] = useState('masum2026');
+  const [email, setEmail] = useState('tushar.aman05@gmail.com');
+  const [password, setPassword] = useState('admin2026');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -59,7 +59,7 @@ export const AdminLogin: React.FC = () => {
             NPB Tutor Admin Portal
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Secure access for <strong>Abdullah All Masum</strong>
+            Secure admin access for <strong className="text-light-indigo dark:text-neon-blue">tushar.aman05@gmail.com</strong>
           </p>
         </div>
 

@@ -10,7 +10,7 @@ import {
 
 // Firebase configuration with production defaults for Project: BatchMgt (batchmgt-6f7ad)
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAUxWCugCsqtiD6wl-jqOpkwDuAQvirmZc",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "batchmgt-6f7ad.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "batchmgt-6f7ad",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "batchmgt-6f7ad.firebasestorage.app",

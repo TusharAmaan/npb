@@ -8,7 +8,23 @@ import {
 } from 'firebase/auth';
 import { auth, googleProvider, isFirebaseConfigured } from '../lib/firebase';
 
-interface AdminUser {
+export const PRIMARY_ADMIN_EMAIL = 'tushar.aman05@gmail.com';
+
+export const isAuthorizedAdmin = (email: string | null | undefined): boolean => {
+  if (!email) return false;
+  const normalized = email.trim().toLowerCase();
+  if (normalized === PRIMARY_ADMIN_EMAIL.toLowerCase()) return true;
+
+  // Additional admin emails configured in environment
+  const extraAdmins = (import.meta.env.VITE_ADMIN_EMAILS || '')
+    .split(',')
+    .map((e: string) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  return extraAdmins.includes(normalized);
+};
+
+export interface AdminUser {
   uid: string;
   email: string | null;
   displayName: string | null;
@@ -34,7 +50,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const saved = localStorage.getItem('npb_admin_session');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed.isDevAdmin || isAuthorizedAdmin(parsed.email)) {
+          return parsed;
+        }
       } catch {
         return null;
       }
@@ -45,12 +64,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     if (isFirebaseConfigured && auth) {
-      const unsubscribe = onAuthStateChanged(auth, (user: User | null) => {
+      const unsubscribe = onAuthStateChanged(auth, async (user: User | null) => {
         if (user) {
+          if (!isAuthorizedAdmin(user.email)) {
+            console.warn(`[NPB Security] Blocked unauthorized login attempt by: ${user.email}`);
+            await firebaseSignOut(auth);
+            setCurrentUser(null);
+            localStorage.removeItem('npb_admin_session');
+            setIsLoading(false);
+            return;
+          }
+
           const adminObj: AdminUser = {
             uid: user.uid,
             email: user.email,
-            displayName: user.displayName || 'Abdullah All Masum',
+            displayName: user.displayName || 'Tushar Aman',
             photoURL: user.photoURL,
           };
           setCurrentUser(adminObj);
@@ -72,35 +100,71 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInGoogle = async () => {
     if (isFirebaseConfigured && auth && googleProvider) {
-      const result = await signInWithPopup(auth, googleProvider);
-      const adminObj: AdminUser = {
-        uid: result.user.uid,
-        email: result.user.email,
-        displayName: result.user.displayName,
-        photoURL: result.user.photoURL,
-      };
-      setCurrentUser(adminObj);
-      localStorage.setItem('npb_admin_session', JSON.stringify(adminObj));
+      try {
+        const result = await signInWithPopup(auth, googleProvider);
+        const userEmail = result.user.email;
+
+        // STRICT ACCESS CONTROL: Only tushar.aman05@gmail.com allowed
+        if (!isAuthorizedAdmin(userEmail)) {
+          await firebaseSignOut(auth);
+          setCurrentUser(null);
+          localStorage.removeItem('npb_admin_session');
+          throw new Error(
+            `Access Denied: "${userEmail}" is not authorized. Only ${PRIMARY_ADMIN_EMAIL} has administrator access.`
+          );
+        }
+
+        const adminObj: AdminUser = {
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName: result.user.displayName || 'Tushar Aman',
+          photoURL: result.user.photoURL,
+        };
+        setCurrentUser(adminObj);
+        localStorage.setItem('npb_admin_session', JSON.stringify(adminObj));
+      } catch (err: any) {
+        if (err?.code === 'auth/unauthorized-domain') {
+          throw new Error(
+            `Firebase Domain Not Authorized: Please add "${window.location.hostname}" to Firebase Console -> Authentication -> Settings -> Authorized Domains.`
+          );
+        }
+        throw err;
+      }
     } else {
-      // Offline fallback login
+      // Offline fallback login for development
       devLoginAsAdmin();
     }
   };
 
   const signInEmail = async (email: string, pass: string) => {
+    if (!isAuthorizedAdmin(email)) {
+      throw new Error(
+        `Access Denied: "${email}" is not authorized. Only ${PRIMARY_ADMIN_EMAIL} has administrator access.`
+      );
+    }
+
     if (isFirebaseConfigured && auth) {
-      const result = await signInWithEmailAndPassword(auth, email, pass);
-      const adminObj: AdminUser = {
-        uid: result.user.uid,
-        email: result.user.email,
-        displayName: result.user.displayName || 'Abdullah All Masum',
-        photoURL: result.user.photoURL,
-      };
-      setCurrentUser(adminObj);
-      localStorage.setItem('npb_admin_session', JSON.stringify(adminObj));
+      try {
+        const result = await signInWithEmailAndPassword(auth, email, pass);
+        const adminObj: AdminUser = {
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName: result.user.displayName || 'Tushar Aman',
+          photoURL: result.user.photoURL,
+        };
+        setCurrentUser(adminObj);
+        localStorage.setItem('npb_admin_session', JSON.stringify(adminObj));
+      } catch (err: any) {
+        if (err?.code === 'auth/unauthorized-domain') {
+          throw new Error(
+            `Firebase Domain Not Authorized: Please add "${window.location.hostname}" to Firebase Console -> Authentication -> Settings -> Authorized Domains.`
+          );
+        }
+        throw err;
+      }
     } else {
-      // Local check or default tutor login
-      if (email.toLowerCase().includes('masum') || email.toLowerCase().includes('admin') || pass.length >= 4) {
+      // Local dev check
+      if (isAuthorizedAdmin(email) && pass.length >= 4) {
         devLoginAsAdmin();
       } else {
         throw new Error('Invalid email or password.');
@@ -110,9 +174,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const devLoginAsAdmin = () => {
     const adminObj: AdminUser = {
-      uid: 'admin-masum-dev-001',
-      email: 'abdullahallmasum@npb.edu',
-      displayName: 'Abdullah All Masum',
+      uid: 'admin-tushar-dev-001',
+      email: PRIMARY_ADMIN_EMAIL,
+      displayName: 'Tushar Aman (Admin)',
       photoURL: null,
       isDevAdmin: true,
     };
@@ -128,11 +192,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('npb_admin_session');
   };
 
+  const isAdmin = !!currentUser && (currentUser.isDevAdmin === true || isAuthorizedAdmin(currentUser.email));
+
   return (
     <AuthContext.Provider
       value={{
         currentUser,
-        isAdmin: !!currentUser,
+        isAdmin,
         isLoading,
         signInGoogle,
         signInEmail,
