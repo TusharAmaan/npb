@@ -18,74 +18,24 @@ import {
   X,
   Copy,
   Check,
+  Pencil,
 } from 'lucide-react';
+import { StudentEditorModal } from './StudentEditorModal';
 
 export const StudentDirectory: React.FC = () => {
-  const { students, batches, schools, saveStudent, deleteStudent, saveSchool } = useData();
+  const { students, batches, schools, deleteStudent } = useData();
   const { confirm } = useModal();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const selectedStudent = students.find((s) => s.id === selectedStudentId) || null;
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBatchId, setFilterBatchId] = useState('all');
   const [filterSchoolId, setFilterSchoolId] = useState('all');
-  const [isAddModalOpen, setIsAddModalOpen] = useState(searchParams.get('action') === 'new');
+  const [isEditorModalOpen, setIsEditorModalOpen] = useState(searchParams.get('action') === 'new');
+  const [studentToEdit, setStudentToEdit] = useState<Student | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // Quick Add School in Modal
-  const [isQuickAddSchoolOpen, setIsQuickAddSchoolOpen] = useState(false);
-  const [quickSchoolName, setQuickSchoolName] = useState('');
-  const [quickSchoolCode, setQuickSchoolCode] = useState('');
-
-  // New Student Form State
-  const [newName, setNewName] = useState('');
-  const [newRoll, setNewRoll] = useState('');
-  const [newSchoolId, setNewSchoolId] = useState(schools[0]?.id || 'sch-1');
-  const [newClassLevel, setNewClassLevel] = useState('HSC 1st Year');
-  const [newSection, setNewSection] = useState('');
-  const [newShift, setNewShift] = useState<'Morning' | 'Day' | 'N/A'>('Day');
-  const [newBatchIds, setNewBatchIds] = useState<string[]>([batches[0]?.id || 'batch-1']);
-  const [newGuardianName, setNewGuardianName] = useState('');
-  const [newGuardianPhone, setNewGuardianPhone] = useState('');
-  const [newStudentPhone, setNewStudentPhone] = useState('');
-  const [newNotes, setNewNotes] = useState('');
-
-  // Handle Add Student Submit
-  const handleAddSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName.trim()) return;
-
-    const matchedSchool = schools.find((s) => s.id === newSchoolId);
-
-    const newStudent: Student = {
-      id: `stu-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
-      publicRollNo: newRoll.trim() || `R-${100 + students.length + 1}`,
-      name: newName.trim(),
-      schoolId: newSchoolId,
-      schoolName: matchedSchool?.name || 'Dhaka College',
-      classLevel: newClassLevel,
-      section: newSection.trim() || undefined,
-      shift: newShift,
-      batchIds: newBatchIds,
-      guardianName: newGuardianName.trim() || undefined,
-      guardianPhone: newGuardianPhone.trim() || '01700000000',
-      studentPhone: newStudentPhone.trim() || undefined,
-      notes: newNotes.trim() || undefined,
-      shareToken: `npb-${Math.random().toString(36).substring(2, 10)}`,
-      joinedAt: Date.now(),
-      isActive: true,
-      streakCount: 0,
-      manualBonusPoints: 0,
-    };
-
-    await saveStudent(newStudent);
-    setIsAddModalOpen(false);
-    // Reset
-    setNewName('');
-    setNewRoll('');
-    setNewGuardianPhone('');
-    setNewNotes('');
-  };
 
   const handleDelete = async (studentId: string, studentName: string) => {
     const ok = await confirm({
@@ -98,8 +48,8 @@ export const StudentDirectory: React.FC = () => {
 
     if (ok) {
       await deleteStudent(studentId);
-      if (selectedStudent?.id === studentId) {
-        setSelectedStudent(null);
+      if (selectedStudentId === studentId) {
+        setSelectedStudentId(null);
       }
     }
   };
@@ -129,7 +79,7 @@ export const StudentDirectory: React.FC = () => {
     return (
       <StudentProfileView
         student={selectedStudent}
-        onBack={() => setSelectedStudent(null)}
+        onBack={() => setSelectedStudentId(null)}
       />
     );
   }
@@ -153,7 +103,10 @@ export const StudentDirectory: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={() => {
+            setStudentToEdit(null);
+            setIsEditorModalOpen(true);
+          }}
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-light-indigo text-white hover:bg-light-slate-blue shadow-md shadow-light-indigo/25 transition-all"
         >
           <Plus className="w-4 h-4" />
@@ -246,7 +199,7 @@ export const StudentDirectory: React.FC = () => {
                       {/* Name & System ID */}
                       <td className="py-3 px-4">
                         <button
-                          onClick={() => setSelectedStudent(stu)}
+                          onClick={() => setSelectedStudentId(stu.id)}
                           className="font-bold text-slate-900 dark:text-white hover:text-light-indigo dark:hover:text-neon-blue transition-colors text-left block"
                         >
                           {stu.name}
@@ -314,7 +267,7 @@ export const StudentDirectory: React.FC = () => {
                           <button
                             onClick={() => handleCopySecretLink(stu.shareToken, stu.id)}
                             title="Copy Live Guardian Link"
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-light-indigo hover:bg-slate-100 dark:hover:bg-slate-800"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-light-indigo hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                           >
                             {copiedId === stu.id ? (
                               <Check className="w-4 h-4 text-weird-green" />
@@ -323,8 +276,20 @@ export const StudentDirectory: React.FC = () => {
                             )}
                           </button>
 
+                          {/* Edit Student Button */}
                           <button
-                            onClick={() => setSelectedStudent(stu)}
+                            onClick={() => {
+                              setStudentToEdit(stu);
+                              setIsEditorModalOpen(true);
+                            }}
+                            title="Edit Student Profile"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-light-indigo hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          >
+                            <Pencil className="w-4 h-4 text-light-indigo dark:text-neon-blue" />
+                          </button>
+
+                          <button
+                            onClick={() => setSelectedStudentId(stu.id)}
                             title="View Full Academic Profile"
                             className="px-2.5 py-1 rounded-lg font-bold bg-light-indigo/10 text-light-indigo dark:text-neon-blue hover:bg-light-indigo hover:text-white transition-all text-[11px]"
                           >
@@ -349,237 +314,16 @@ export const StudentDirectory: React.FC = () => {
         </div>
       </div>
 
-      {/* Add Student Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white dark:bg-dark-surface rounded-2xl w-full max-w-xl border border-slate-200 dark:border-dark-border shadow-2xl overflow-hidden my-8">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-dark-border">
-              <div>
-                <h3 className="font-extrabold text-lg text-slate-900 dark:text-white">
-                  Enroll New Student
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Assign public roll number, school, and batch enrollments
-                </p>
-              </div>
-              <button
-                onClick={() => setIsAddModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Student Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    placeholder="e.g. Tanvir Hasan"
-                    className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Manual Public Roll No *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newRoll}
-                    onChange={(e) => setNewRoll(e.target.value)}
-                    placeholder="e.g. HSC-05 or 105"
-                    className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                      School / Institution
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsQuickAddSchoolOpen(!isQuickAddSchoolOpen)}
-                      className="text-[11px] font-bold text-light-indigo dark:text-spiro-disco-ball hover:underline flex items-center gap-0.5"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Add New</span>
-                    </button>
-                  </div>
-                  <select
-                    value={newSchoolId}
-                    onChange={(e) => setNewSchoolId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  >
-                    {schools.map((sch) => (
-                      <option key={sch.id} value={sch.id}>
-                        {sch.shortCode} - {sch.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Inline Quick Add Institution */}
-                  {isQuickAddSchoolOpen && (
-                    <div className="mt-2 p-2.5 rounded-xl border border-light-indigo/30 bg-light-indigo/5 dark:bg-slate-800/80 space-y-2 animate-in fade-in duration-150">
-                      <div className="text-[11px] font-black text-light-indigo dark:text-spiro-disco-ball">
-                        Quick Add New Institution
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Full Name (e.g. Notre Dame College)"
-                        value={quickSchoolName}
-                        onChange={(e) => setQuickSchoolName(e.target.value)}
-                        className="w-full px-2.5 py-1.5 rounded-lg text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface text-slate-900 dark:text-white"
-                      />
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="Acronym (e.g. NDC)"
-                          value={quickSchoolCode}
-                          onChange={(e) => setQuickSchoolCode(e.target.value.toUpperCase())}
-                          className="w-24 px-2.5 py-1.5 rounded-lg text-xs font-bold uppercase border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface text-slate-900 dark:text-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!quickSchoolName.trim() || !quickSchoolCode.trim()) return;
-                            const newSch = {
-                              id: `sch-${Date.now().toString(36)}`,
-                              name: quickSchoolName.trim(),
-                              shortCode: quickSchoolCode.trim().toUpperCase(),
-                              createdAt: Date.now(),
-                            };
-                            await saveSchool(newSch);
-                            setNewSchoolId(newSch.id);
-                            setIsQuickAddSchoolOpen(false);
-                            setQuickSchoolName('');
-                            setQuickSchoolCode('');
-                          }}
-                          className="flex-1 py-1.5 px-3 rounded-lg text-xs font-black bg-light-indigo text-white hover:bg-light-slate-blue transition-colors shadow-xs"
-                        >
-                          Save & Select
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Class Level
-                  </label>
-                  <select
-                    value={newClassLevel}
-                    onChange={(e) => setNewClassLevel(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  >
-                    <option value="HSC 1st Year">HSC 1st Year</option>
-                    <option value="HSC 2nd Year">HSC 2nd Year</option>
-                    <option value="Class 10">Class 10</option>
-                    <option value="Class 9">Class 9</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Guardian Mobile (for WhatsApp Reports) *
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={newGuardianPhone}
-                    onChange={(e) => setNewGuardianPhone(e.target.value)}
-                    placeholder="017xxxxxxxx"
-                    className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Guardian Name
-                  </label>
-                  <input
-                    type="text"
-                    value={newGuardianName}
-                    onChange={(e) => setNewGuardianName(e.target.value)}
-                    placeholder="e.g. Mr. M. Rahman"
-                    className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              {/* Multi-Batch Enrollment Checkboxes */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Batch Enrollment (Can select multiple)
-                </label>
-                <div className="space-y-1.5 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40">
-                  {batches.map((b) => (
-                    <label key={b.id} className="flex items-center gap-2 text-xs cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={newBatchIds.includes(b.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setNewBatchIds([...newBatchIds, b.id]);
-                          } else {
-                            setNewBatchIds(newBatchIds.filter((id) => id !== b.id));
-                          }
-                        }}
-                        className="rounded text-light-indigo focus:ring-light-indigo"
-                      />
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {b.name} ({b.courseTag})
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Private Tutor Notes
-                </label>
-                <textarea
-                  rows={2}
-                  value={newNotes}
-                  onChange={(e) => setNewNotes(e.target.value)}
-                  placeholder="e.g. Strong in writing, needs extra support with Narration & Modifiers"
-                  className="w-full px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 dark:border-dark-border flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-light-indigo text-white hover:bg-light-slate-blue shadow-sm"
-                >
-                  Enroll Student
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Student Profile Editor / Creator Modal */}
+      <StudentEditorModal
+        isOpen={isEditorModalOpen}
+        onClose={() => {
+          setIsEditorModalOpen(false);
+          setStudentToEdit(null);
+        }}
+        student={studentToEdit}
+        defaultBatchId={filterBatchId !== 'all' ? filterBatchId : undefined}
+      />
     </div>
   );
 };

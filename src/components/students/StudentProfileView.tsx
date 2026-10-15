@@ -6,6 +6,7 @@ import { useModal } from '../../context/ModalContext';
 import { SyllabusManager } from './SyllabusManager';
 import { calculateStudentAnalytics } from '../../lib/performanceMath';
 import { createWhatsAppLink, WhatsAppTemplates, getReportShareUrl } from '../../lib/whatsappTemplates';
+import { StudentEditorModal } from './StudentEditorModal';
 import {
   User,
   PhoneCall,
@@ -24,6 +25,7 @@ import {
   RotateCw,
   Copy,
   Check,
+  Pencil,
 } from 'lucide-react';
 
 interface StudentProfileViewProps {
@@ -32,9 +34,12 @@ interface StudentProfileViewProps {
 }
 
 export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student, onBack }) => {
-  const { batches, sessions, homeworks, exams, sheets, syllabi, saveStudent, saveBonusLog } = useData();
+  const { students, batches, sessions, homeworks, exams, sheets, syllabi, saveStudent, saveBonusLog } = useData();
   const { confirm, alert } = useModal();
   const navigate = useNavigate();
+
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const currentStudent = students.find((s) => s.id === student.id) || student;
 
   const [activeTab, setActiveTab] = useState<'overview' | 'syllabus' | 'attendance' | 'homework' | 'exams'>('overview');
   const [copiedLink, setCopiedLink] = useState(false);
@@ -42,12 +47,12 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student,
   const [bonusReason, setBonusReason] = useState('Outstanding participation');
 
   // Find primary enrolled batch
-  const primaryBatch = batches.find((b) => student.batchIds?.includes(b.id)) || batches[0];
-  const studentSyllabus = syllabi[student.id];
+  const primaryBatch = batches.find((b) => currentStudent.batchIds?.includes(b.id)) || batches[0];
+  const studentSyllabus = syllabi[currentStudent.id];
 
   const analytics = primaryBatch
     ? calculateStudentAnalytics(
-        student,
+        currentStudent,
         primaryBatch,
         sessions,
         homeworks,
@@ -57,7 +62,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student,
       )
     : null;
 
-  const shareUrl = getReportShareUrl(student.shareToken);
+  const shareUrl = getReportShareUrl(currentStudent.shareToken);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareUrl);
@@ -67,11 +72,11 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student,
 
   const handleSendWhatsApp = () => {
     const msg = WhatsAppTemplates.guardianLiveReport(
-      student.name,
-      student.guardianName || 'Guardian',
+      currentStudent.name,
+      currentStudent.guardianName || 'Guardian',
       shareUrl
     );
-    const link = createWhatsAppLink(student.guardianPhone, msg);
+    const link = createWhatsAppLink(currentStudent.guardianPhone, msg);
     window.open(link, '_blank');
   };
 
@@ -86,7 +91,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student,
 
     if (ok) {
       const newToken = `npb-${Math.random().toString(36).substring(2, 10)}`;
-      await saveStudent({ ...student, shareToken: newToken });
+      await saveStudent({ ...currentStudent, shareToken: newToken });
       await alert({
         title: 'New Link Generated',
         message: 'A new secret report link has been created and saved.',
@@ -99,7 +104,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student,
     const points = isPositive ? bonusInput : -bonusInput;
     await saveBonusLog({
       id: `b-${Date.now().toString(36)}`,
-      studentId: student.id,
+      studentId: currentStudent.id,
       batchId: primaryBatch?.id || 'batch-1',
       date: new Date().toISOString().split('T')[0],
       points,
@@ -120,9 +125,18 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student,
         </button>
 
         <div className="flex items-center gap-2">
+          {/* Edit Profile Button */}
+          <button
+            onClick={() => setIsEditModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 transition-colors shadow-xs"
+          >
+            <Pencil className="w-3.5 h-3.5 text-light-indigo dark:text-neon-blue" />
+            <span>Edit Profile</span>
+          </button>
+
           {/* Guardian Presentation Mode Button */}
           <button
-            onClick={() => navigate(`/report/${student.shareToken}?mode=presentation`)}
+            onClick={() => navigate(`/report/${currentStudent.shareToken}?mode=presentation`)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-light-indigo text-white hover:bg-light-slate-blue shadow-sm"
           >
             <ExternalLink className="w-3.5 h-3.5" />
@@ -136,49 +150,49 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student,
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-start gap-4">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-light-indigo to-light-slate-blue flex items-center justify-center text-white font-black text-xl shadow-md">
-              {student.name.substring(0, 2).toUpperCase()}
+              {currentStudent.name.substring(0, 2).toUpperCase()}
             </div>
 
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-black px-2.5 py-0.5 rounded-md bg-radiant-yellow/20 text-amber-800 dark:text-radiant-yellow">
-                  Roll: {student.publicRollNo}
+                  Roll: {currentStudent.publicRollNo}
                 </span>
                 <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                  {student.classLevel} • {student.schoolName}
+                  {currentStudent.classLevel} • {currentStudent.schoolName}
                 </span>
-                {student.section && (
-                  <span className="text-xs text-slate-400">Sec: {student.section}</span>
+                {currentStudent.section && (
+                  <span className="text-xs text-slate-400">Sec: {currentStudent.section}</span>
                 )}
               </div>
 
               <h1 className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-                {student.name}
+                {currentStudent.name}
               </h1>
 
               {/* Guardian contact */}
               <div className="flex items-center gap-3 mt-2 text-xs">
                 <a
-                  href={`https://wa.me/880${student.guardianPhone}`}
+                  href={`https://wa.me/880${currentStudent.guardianPhone}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-wintergreen hover:underline"
                 >
                   <PhoneCall className="w-3.5 h-3.5" />
-                  <span>Guardian: {student.guardianPhone}</span>
+                  <span>Guardian: {currentStudent.guardianPhone}</span>
                 </a>
 
-                {student.streakCount > 0 && (
+                {currentStudent.streakCount > 0 && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-weird-green/15 text-emerald-700 dark:text-wintergreen">
                     <Flame className="w-3.5 h-3.5 fill-current" />
-                    {student.streakCount} Day Streak
+                    {currentStudent.streakCount} Day Streak
                   </span>
                 )}
 
-                {(student.manualBonusPoints || 0) !== 0 && (
+                {(currentStudent.manualBonusPoints || 0) !== 0 && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-light-purple/20 text-light-purple">
                     <Award className="w-3.5 h-3.5" />
-                    Bonus: {student.manualBonusPoints} pts
+                    Bonus: {currentStudent.manualBonusPoints} pts
                   </span>
                 )}
               </div>
@@ -586,6 +600,20 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({ student,
           </div>
         </div>
       )}
+
+      {/* Student Profile Editor Modal */}
+      <StudentEditorModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        student={currentStudent}
+        onSaved={() => {
+          // If deleted or updated, check if still exists
+          const stillExists = students.some((s) => s.id === currentStudent.id);
+          if (!stillExists) {
+            onBack();
+          }
+        }}
+      />
     </div>
   );
 };
