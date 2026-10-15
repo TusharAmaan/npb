@@ -8,14 +8,17 @@ import {
   getFirestore,
 } from 'firebase/firestore';
 
+const defaultApiKey = "AIzaSyAUxWCugCsqtiD6wl-jqOpkwDuAQvirmZc";
+
 // Firebase configuration with production defaults for Project: BatchMgt (batchmgt-6f7ad)
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || defaultApiKey,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "batchmgt-6f7ad.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "batchmgt-6f7ad",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "batchmgt-6f7ad.firebasestorage.app",
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "116589525906",
   appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:116589525906:web:ff570f04e47e0bc6b41f4b",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-W1LE2K8W06",
 };
 
 let app: any = null;
@@ -25,10 +28,10 @@ let googleProvider: GoogleAuthProvider | null = null;
 let isFirebaseConfigured = false;
 
 try {
-  // Check if API key is not the demo placeholder
+  // Check if API key is not empty or demo placeholder
   const hasRealKey =
-    import.meta.env.VITE_FIREBASE_API_KEY &&
-    !import.meta.env.VITE_FIREBASE_API_KEY.includes('DEMO_KEY');
+    Boolean(firebaseConfig.apiKey) &&
+    !firebaseConfig.apiKey.includes('DEMO_KEY');
 
   if (hasRealKey) {
     app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);

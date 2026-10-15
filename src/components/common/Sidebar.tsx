@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   CalendarClock,
   Landmark,
+  BookOpen,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -62,6 +63,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       label: 'Student Directory',
       icon: Users,
       color: 'text-bright-lilac',
+    },
+    {
+      to: '/admin/syllabus',
+      label: 'Syllabus Schemes',
+      icon: BookOpen,
+      color: 'text-emerald-500',
     },
     {
       to: '/admin/homework',

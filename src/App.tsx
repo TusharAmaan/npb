@@ -24,6 +24,7 @@ import { StudentDirectory } from './components/students/StudentDirectory';
 import { LiveClassSession } from './components/live-class/LiveClassSession';
 import { HomeworkManager } from './components/homework/HomeworkManager';
 import { ExamManager } from './components/exams/ExamManager';
+import { SyllabusManagerView } from './components/syllabus/SyllabusManagerView';
 import { WeakTopicRadar } from './components/tutor-tools/WeakTopicRadar';
 import { MakeupPlanner } from './components/tutor-tools/MakeupPlanner';
 import { LectureSheetTracker } from './components/tutor-tools/LectureSheetTracker';
@@ -91,6 +92,7 @@ export function App() {
                   <Route path="batches" element={<BatchList />} />
                   <Route path="schools" element={<SchoolDirectory />} />
                   <Route path="students" element={<StudentDirectory />} />
+                  <Route path="syllabus" element={<SyllabusManagerView />} />
                   <Route path="homework" element={<HomeworkManager />} />
                   <Route path="exams" element={<ExamManager />} />
                   {/* Tutor Tools */}

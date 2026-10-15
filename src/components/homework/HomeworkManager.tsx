@@ -18,10 +18,11 @@ import {
   X,
   MessageSquare,
   Users,
+  BookOpen,
 } from 'lucide-react';
 
 export const HomeworkManager: React.FC = () => {
-  const { batches, students, schools, homeworks, saveHomework, deleteHomework, saveHomeworkSubmission } =
+  const { batches, students, schools, homeworks, syllabusSchemes, saveHomework, deleteHomework, saveHomeworkSubmission } =
     useData();
 
   const [selectedBatchId, setSelectedBatchId] = useState<string>(batches[0]?.id || '');
@@ -33,6 +34,7 @@ export const HomeworkManager: React.FC = () => {
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newRelatedTopic, setNewRelatedTopic] = useState('');
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [newDueDate, setNewDueDate] = useState(
     new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0]
   );
@@ -45,10 +47,16 @@ export const HomeworkManager: React.FC = () => {
   );
   const [newMaxMarks, setNewMaxMarks] = useState<number>(10);
 
-  // Active Batch Homeworks
+  // Active Batch Homeworks & Syllabus Schemes
   const batchHomeworks = homeworks.filter((h) => h.batchId === selectedBatchId);
   const activeHomework =
     batchHomeworks.find((h) => h.id === selectedHwId) || batchHomeworks[0] || homeworks[0];
+  const batchSchemes = syllabusSchemes.filter((s) => s.targetBatchId === selectedBatchId);
+  const availableTopics = Array.from(
+    new Set([
+      ...batchSchemes.flatMap((s) => s.topics.map((t) => t.title)),
+    ])
+  );
 
   // Active Batch Students
   const activeBatch = batches.find((b) => b.id === selectedBatchId) || batches[0];
@@ -75,9 +83,12 @@ export const HomeworkManager: React.FC = () => {
       batchId: selectedBatchId,
       title: newTitle.trim(),
       description: newDesc.trim() || undefined,
-      relatedTopics: newRelatedTopic
-        ? newRelatedTopic.split(',').map((t) => t.trim())
-        : [],
+      relatedTopics:
+        selectedTopics.length > 0
+          ? selectedTopics
+          : newRelatedTopic
+          ? newRelatedTopic.split(',').map((t) => t.trim())
+          : [],
       assignedDate: new Date().toISOString().split('T')[0],
       dueDate: newDueDate,
       targetType: newTargetType,
@@ -93,6 +104,8 @@ export const HomeworkManager: React.FC = () => {
     setIsCreateModalOpen(false);
     setNewTitle('');
     setNewDesc('');
+    setSelectedTopics([]);
+    setNewRelatedTopic('');
   };
 
   // Handle Submission update
@@ -427,6 +440,56 @@ export const HomeworkManager: React.FC = () => {
                   placeholder="e.g. Write clean answers in HW copy with question numbers."
                   className="w-full px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                 />
+              </div>
+
+              {/* Link Syllabus Topics Selector */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <BookOpen className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Link Syllabus Topics ({selectedTopics.length} selected)</span>
+                  </label>
+                  {batchSchemes.length > 0 && (
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                      {batchSchemes.length} Syllabus Scheme(s)
+                    </span>
+                  )}
+                </div>
+
+                {availableTopics.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 max-h-32 overflow-y-auto custom-scrollbar">
+                    {availableTopics.map((top) => {
+                      const isSelected = selectedTopics.includes(top);
+                      return (
+                        <button
+                          key={top}
+                          type="button"
+                          onClick={() =>
+                            setSelectedTopics((prev) =>
+                              isSelected ? prev.filter((t) => t !== top) : [...prev, top]
+                            )
+                          }
+                          className={`text-xs px-2.5 py-1 rounded-lg font-bold transition-all border ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                              : 'bg-white dark:bg-dark-surface text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-400'
+                          }`}
+                        >
+                          {isSelected && '✓ '}
+                          {top}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={newRelatedTopic}
+                    onChange={(e) => setNewRelatedTopic(e.target.value)}
+                    placeholder="e.g. Modifiers, Prepositions (comma separated)"
+                    className="w-full px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

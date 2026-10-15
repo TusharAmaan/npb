@@ -12,6 +12,7 @@ import {
   Student,
   StudentSyllabus,
   StudentSyllabusTopic,
+  SyllabusScheme,
 } from '../types/models';
 import {
   initialBatches,
@@ -24,6 +25,7 @@ import {
   initialSheets,
   initialStudents,
   initialSyllabi,
+  initialSyllabusSchemes,
 } from '../lib/seedData';
 import { db, auth, isFirebaseConfigured } from '../lib/firebase';
 import {
@@ -48,6 +50,7 @@ interface DataContextType {
   batches: Batch[];
   students: Student[];
   syllabi: Record<string, StudentSyllabus>;
+  syllabusSchemes: SyllabusScheme[];
   sessions: ClassSession[];
   homeworks: Homework[];
   exams: Exam[];
@@ -66,6 +69,9 @@ interface DataContextType {
   deleteStudent: (studentId: string) => Promise<void>;
   saveStudentSyllabus: (studentId: string, topics: StudentSyllabusTopic[]) => Promise<void>;
   cloneSyllabus: (fromStudentId: string, toStudentId: string) => Promise<void>;
+  saveSyllabusScheme: (scheme: SyllabusScheme) => Promise<void>;
+  deleteSyllabusScheme: (schemeId: string) => Promise<void>;
+  applySchemeToStudentSyllabi: (scheme: SyllabusScheme) => Promise<void>;
   saveClassSession: (session: ClassSession, targetTopicStatus?: 'in_progress' | 'completed') => Promise<void>;
   deleteClassSession: (sessionId: string) => Promise<void>;
   saveHomework: (homework: Homework) => Promise<void>;
@@ -112,6 +118,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [syllabi, setSyllabi] = useState<Record<string, StudentSyllabus>>(() =>
     loadLocal('syllabi', initialSyllabi)
   );
+  const [syllabusSchemes, setSyllabusSchemes] = useState<SyllabusScheme[]>(() =>
+    loadLocal('syllabusSchemes', initialSyllabusSchemes)
+  );
   const [sessions, setSessions] = useState<ClassSession[]>(() => loadLocal('sessions', initialSessions));
   const [homeworks, setHomeworks] = useState<Homework[]>(() => loadLocal('homeworks', initialHomeworks));
   const [exams, setExams] = useState<Exam[]>(() => loadLocal('exams', initialExams));
@@ -137,6 +146,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(LOCAL_STORAGE_PREFIX + 'syllabi', JSON.stringify(syllabi));
   }, [syllabi]);
   useEffect(() => {
+    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'syllabusSchemes', JSON.stringify(syllabusSchemes));
+  }, [syllabusSchemes]);
+  useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_PREFIX + 'sessions', JSON.stringify(sessions));
   }, [sessions]);
   useEffect(() => {
@@ -155,6 +167,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem(LOCAL_STORAGE_PREFIX + 'settings', JSON.stringify(settings));
   }, [settings]);
 
+  // Safe bidirectional merge helper: ensures local data (e.g. offline/live entries) is NEVER overwritten or lost
+  const mergeCollections = <T extends { id: string }>(localList: T[], remoteList: T[]): T[] => {
+    const remoteMap = new Map<string, T>(remoteList.map((item) => [item.id, item]));
+    const result: T[] = [];
+    const processedIds = new Set<string>();
+
+    for (const remoteItem of remoteList) {
+      const localMatch = localList.find((l) => l.id === remoteItem.id);
+      if (localMatch) {
+        const localTime = (localMatch as any).updatedAt || (localMatch as any).createdAt || 0;
+        const remoteTime = (remoteItem as any).updatedAt || (remoteItem as any).createdAt || 0;
+        result.push(localTime > remoteTime ? localMatch : remoteItem);
+      } else {
+        result.push(remoteItem);
+      }
+      processedIds.add(remoteItem.id);
+    }
+
+    // Preserve any item created locally (e.g. on live site while offline) that is not yet in remote Firestore
+    for (const localItem of localList) {
+      if (!processedIds.has(localItem.id)) {
+        result.push(localItem);
+      }
+    }
+
+    return result;
+  };
+
   // Firestore Real-Time Subscriptions if Firebase is configured
   useEffect(() => {
     if (!isFirebaseConfigured || !db) return;
@@ -165,7 +205,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (snapshot: QuerySnapshot<DocumentData>) => {
           if (!snapshot.empty) {
             const list = snapshot.docs.map((d: DocumentData) => d.data() as Batch);
-            setBatches(list);
+            setBatches((prev) => mergeCollections(prev, list));
           }
         },
         (err) => console.info('[NPB Data] Batches cloud sync:', err.message)
@@ -175,7 +215,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (snapshot: QuerySnapshot<DocumentData>) => {
           if (!snapshot.empty) {
             const list = snapshot.docs.map((d: DocumentData) => d.data() as School);
-            setSchools(list);
+            setSchools((prev) => mergeCollections(prev, list));
           }
         },
         (err) => console.info('[NPB Data] Schools cloud sync:', err.message)
@@ -185,7 +225,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (snapshot: QuerySnapshot<DocumentData>) => {
           if (!snapshot.empty) {
             const list = snapshot.docs.map((d: DocumentData) => d.data() as Student);
-            setStudents(list);
+            setStudents((prev) => mergeCollections(prev, list));
           }
         },
         (err) => console.info('[NPB Data] Students cloud sync:', err.message)
@@ -195,7 +235,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (snapshot: QuerySnapshot<DocumentData>) => {
           if (!snapshot.empty) {
             const list = snapshot.docs.map((d: DocumentData) => d.data() as ClassSession);
-            setSessions(list);
+            setSessions((prev) => mergeCollections(prev, list));
           }
         },
         (err) => console.info('[NPB Data] Sessions cloud sync:', err.message)
@@ -205,7 +245,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (snapshot: QuerySnapshot<DocumentData>) => {
           if (!snapshot.empty) {
             const list = snapshot.docs.map((d: DocumentData) => d.data() as Homework);
-            setHomeworks(list);
+            setHomeworks((prev) => mergeCollections(prev, list));
           }
         },
         (err) => console.info('[NPB Data] Homeworks cloud sync:', err.message)
@@ -215,7 +255,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (snapshot: QuerySnapshot<DocumentData>) => {
           if (!snapshot.empty) {
             const list = snapshot.docs.map((d: DocumentData) => d.data() as Exam);
-            setExams(list);
+            setExams((prev) => mergeCollections(prev, list));
           }
         },
         (err) => console.info('[NPB Data] Exams cloud sync:', err.message)
@@ -225,10 +265,49 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (snapshot: QuerySnapshot<DocumentData>) => {
           if (!snapshot.empty) {
             const list = snapshot.docs.map((d: DocumentData) => d.data() as LectureSheet);
-            setSheets(list);
+            setSheets((prev) => mergeCollections(prev, list));
           }
         },
         (err) => console.info('[NPB Data] Sheets cloud sync:', err.message)
+      );
+      const unsubSyllabusSchemes = onSnapshot(
+        collection(db, 'syllabusSchemes'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as SyllabusScheme);
+            setSyllabusSchemes((prev) => mergeCollections(prev, list));
+          }
+        },
+        (err) => console.info('[NPB Data] Syllabus schemes cloud sync:', err.message)
+      );
+      const unsubBonus = onSnapshot(
+        collection(db, 'bonusLogs'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as BonusLog);
+            setBonusLogs((prev) => mergeCollections(prev, list));
+          }
+        },
+        (err) => console.info('[NPB Data] Bonus logs cloud sync:', err.message)
+      );
+      const unsubSyllabi = onSnapshot(
+        collection(db, 'studentSyllabi'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            setSyllabi((prev) => {
+              const merged = { ...prev };
+              snapshot.docs.forEach((docSnap) => {
+                const remoteSyl = docSnap.data() as StudentSyllabus;
+                const localSyl = prev[remoteSyl.studentId];
+                if (!localSyl || (remoteSyl.updatedAt || 0) >= (localSyl.updatedAt || 0)) {
+                  merged[remoteSyl.studentId] = remoteSyl;
+                }
+              });
+              return merged;
+            });
+          }
+        },
+        (err) => console.info('[NPB Data] Student syllabi cloud sync:', err.message)
       );
 
       return () => {
@@ -239,6 +318,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubHomeworks();
         unsubExams();
         unsubSheets();
+        unsubSyllabusSchemes();
+        unsubBonus();
+        unsubSyllabi();
       };
     } catch (err) {
       console.warn('[NPB Firestore] Subscription error:', err);
@@ -320,7 +402,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await setDoc(doc(db, 'settings', 'global'), settings);
       count++;
 
-      const successMsg = `Successfully pushed ${count} documents across 10 collections to Cloud Firestore! Refresh Firebase Console to view tables.`;
+      // 11. Syllabus Schemes
+      for (const scheme of syllabusSchemes) {
+        await setDoc(doc(db, 'syllabusSchemes', scheme.id), scheme);
+        count++;
+      }
+
+      const successMsg = `Successfully pushed ${count} documents across 11 collections to Cloud Firestore! Refresh Firebase Console to view tables.`;
       console.log(`[NPB Firebase] ${successMsg}`);
       setLastCloudSyncStatus({ status: 'success', message: successMsg, timestamp: Date.now() });
       return { success: true, count };
@@ -539,6 +627,46 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       setSyllabi(updatedSyllabi);
+    }
+
+    // Automated Syllabus Schemes Topic Progress Sync
+    if (session.topicsTaught && session.topicsTaught.length > 0) {
+      setSyllabusSchemes((prevSchemes) =>
+        prevSchemes.map((sch) => {
+          if (sch.targetBatchId !== session.batchId) return sch;
+          let schemeChanged = false;
+          const updatedTopics = sch.topics.map((top) => {
+            const isCovered = session.topicsTaught.some(
+              (tc: string) =>
+                tc.toLowerCase().trim() === top.title.toLowerCase().trim() ||
+                tc.toLowerCase().includes(top.title.toLowerCase()) ||
+                top.title.toLowerCase().includes(tc.toLowerCase()) ||
+                top.id === tc
+            );
+            if (isCovered) {
+              schemeChanged = true;
+              return {
+                ...top,
+                status: targetTopicStatus,
+                lastTaughtDate: session.date,
+              };
+            }
+            return top;
+          });
+          if (schemeChanged) {
+            const updatedSch = { ...sch, topics: updatedTopics, updatedAt: Date.now() };
+            if (isFirebaseConfigured && db) {
+              try {
+                setDoc(doc(db, 'syllabusSchemes', sch.id), updatedSch);
+              } catch (err: any) {
+                console.warn('[NPB Firestore sync scheme topic]:', err.message);
+              }
+            }
+            return updatedSch;
+          }
+          return sch;
+        })
+      );
     }
 
     // Streak update for students
@@ -798,6 +926,56 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       setSyllabi(updatedSyllabi);
+
+      // Automated Syllabus Scheme Performance Sync: Flag weak topics as revision_needed if batch average < 60%
+      setSyllabusSchemes((prevSchemes) =>
+        prevSchemes.map((sch) => {
+          if (sch.targetBatchId !== exam.batchId) return sch;
+          let changed = false;
+          const updatedTopics = sch.topics.map((st) => {
+            const matchedSecs = exam.sections?.filter((sec) =>
+              sec.linkedTopicTitles?.some(
+                (lt) =>
+                  lt.toLowerCase().trim() === st.title.toLowerCase().trim() ||
+                  lt.toLowerCase().includes(st.title.toLowerCase()) ||
+                  st.title.toLowerCase().includes(lt.toLowerCase())
+              )
+            );
+            if (!matchedSecs || matchedSecs.length === 0) return st;
+
+            let totalObtained = 0;
+            let totalPossible = 0;
+            Object.values(exam.results).forEach((r) => {
+              if (r.isAbsent) return;
+              matchedSecs.forEach((sec) => {
+                totalPossible += sec.maxMarks || 0;
+                totalObtained += r.sectionMarks?.[sec.id] || 0;
+              });
+            });
+
+            if (totalPossible > 0) {
+              const avg = Math.round((totalObtained / totalPossible) * 100);
+              if (avg < 60 && st.status !== 'revision_needed') {
+                changed = true;
+                return { ...st, status: 'revision_needed' as const };
+              }
+            }
+            return st;
+          });
+          if (changed) {
+            const updatedSch = { ...sch, topics: updatedTopics, updatedAt: Date.now() };
+            if (isFirebaseConfigured && db) {
+              try {
+                setDoc(doc(db, 'syllabusSchemes', sch.id), updatedSch);
+              } catch (err: any) {
+                console.warn('[NPB Firestore sync exam scheme]:', err.message);
+              }
+            }
+            return updatedSch;
+          }
+          return sch;
+        })
+      );
     }
   };
 
@@ -912,6 +1090,93 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  const saveSyllabusScheme = async (scheme: SyllabusScheme) => {
+    setSyllabusSchemes((prev) => {
+      const idx = prev.findIndex((s) => s.id === scheme.id);
+      return idx >= 0 ? prev.map((s) => (s.id === scheme.id ? scheme : s)) : [scheme, ...prev];
+    });
+    if (isFirebaseConfigured && db) {
+      try {
+        await setDoc(doc(db, 'syllabusSchemes', scheme.id), scheme);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveSyllabusScheme]:', err.message);
+      }
+    }
+  };
+
+  const deleteSyllabusScheme = async (schemeId: string) => {
+    setSyllabusSchemes((prev) => prev.filter((s) => s.id !== schemeId));
+    if (isFirebaseConfigured && db) {
+      try {
+        await deleteDoc(doc(db, 'syllabusSchemes', schemeId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteSyllabusScheme]:', err.message);
+      }
+    }
+  };
+
+  const applySchemeToStudentSyllabi = async (scheme: SyllabusScheme) => {
+    const targetStudents = students.filter((stu) => {
+      if (!stu.batchIds?.includes(scheme.targetBatchId)) return false;
+      if (scheme.scopeType === 'batch_wide') return true;
+      if (scheme.scopeType === 'batch_and_schools') {
+        return scheme.targetSchoolIds?.includes(stu.schoolId);
+      }
+      if (scheme.scopeType === 'batch_and_students') {
+        return scheme.targetStudentIds?.includes(stu.id);
+      }
+      return true;
+    });
+
+    const updatedSyllabi = { ...syllabi };
+
+    for (const stu of targetStudents) {
+      const existing = updatedSyllabi[stu.id]?.topics || [];
+      const newTopics: StudentSyllabusTopic[] = scheme.topics.map((st) => {
+        const match = existing.find((et) => et.title.toLowerCase().trim() === st.title.toLowerCase().trim());
+        if (match) {
+          return {
+            ...match,
+            category: st.unitTitle || match.category,
+            priority: st.priority,
+            targetDate: st.targetDate || match.targetDate,
+            status: match.status === 'not_started' && st.status !== 'not_started' ? st.status : match.status,
+          };
+        }
+        return {
+          id: `topic-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          category: st.unitTitle || 'General Unit',
+          title: st.title,
+          status: st.status || 'not_started',
+          priority: st.priority,
+          targetDate: st.targetDate,
+          missedSessionIds: [],
+          notes: `From syllabus: ${scheme.title}`,
+        };
+      });
+
+      const extraTopics = existing.filter(
+        (et) => !scheme.topics.some((st) => st.title.toLowerCase().trim() === et.title.toLowerCase().trim())
+      );
+
+      updatedSyllabi[stu.id] = {
+        studentId: stu.id,
+        updatedAt: Date.now(),
+        topics: [...newTopics, ...extraTopics],
+      };
+
+      if (isFirebaseConfigured && db) {
+        try {
+          await setDoc(doc(db, 'studentSyllabi', stu.id), updatedSyllabi[stu.id]);
+        } catch (err: any) {
+          console.warn('[NPB Firestore sync scheme to student syllabus]:', err.message);
+        }
+      }
+    }
+
+    setSyllabi(updatedSyllabi);
+  };
+
   // --- Seed Data & System Management ---
 
   const loadDemoData = () => {
@@ -919,6 +1184,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setBatches(initialBatches);
     setStudents(initialStudents);
     setSyllabi(initialSyllabi);
+    setSyllabusSchemes(initialSyllabusSchemes);
     setSessions(initialSessions);
     setHomeworks(initialHomeworks);
     setExams(initialExams);
@@ -932,6 +1198,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setBatches([]);
     setStudents([]);
     setSyllabi({});
+    setSyllabusSchemes([]);
     setSessions([]);
     setHomeworks([]);
     setExams([]);
@@ -948,6 +1215,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       batches,
       students,
       syllabi,
+      syllabusSchemes,
       sessions,
       homeworks,
       exams,
@@ -965,6 +1233,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (parsed.batches) setBatches(parsed.batches);
       if (parsed.students) setStudents(parsed.students);
       if (parsed.syllabi) setSyllabi(parsed.syllabi);
+      if (parsed.syllabusSchemes) setSyllabusSchemes(parsed.syllabusSchemes);
       if (parsed.sessions) setSessions(parsed.sessions);
       if (parsed.homeworks) setHomeworks(parsed.homeworks);
       if (parsed.exams) setExams(parsed.exams);
@@ -1043,6 +1312,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         batches,
         students,
         syllabi,
+        syllabusSchemes,
         sessions,
         homeworks,
         exams,
@@ -1059,6 +1329,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         deleteStudent,
         saveStudentSyllabus,
         cloneSyllabus,
+        saveSyllabusScheme,
+        deleteSyllabusScheme,
+        applySchemeToStudentSyllabi,
         saveClassSession,
         deleteClassSession,
         saveHomework,

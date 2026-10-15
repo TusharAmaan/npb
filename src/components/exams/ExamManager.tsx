@@ -15,10 +15,12 @@ import {
   FileSpreadsheet,
   X,
   Edit2,
+  BookOpen,
+  Sparkles,
 } from 'lucide-react';
 
 export const ExamManager: React.FC = () => {
-  const { batches, students, schools, exams, syllabi, saveExam, deleteExam } = useData();
+  const { batches, students, schools, exams, syllabi, syllabusSchemes, saveExam, deleteExam } = useData();
   const { confirm } = useModal();
 
   const [selectedBatchId, setSelectedBatchId] = useState<string>(batches[0]?.id || '');
@@ -56,18 +58,58 @@ export const ExamManager: React.FC = () => {
     },
   ]);
 
-  // Active batch exams
+  // Active batch exams & schemes
   const batchExams = exams.filter((e) => e.batchId === selectedBatchId);
   const activeBatch = batches.find((b) => b.id === selectedBatchId) || batches[0];
+  const batchSchemes = syllabusSchemes.filter((s) => s.targetBatchId === selectedBatchId);
+  const [selectedSchemeId, setSelectedSchemeId] = useState<string>('');
 
-  // Topics available in this batch
+  // Topics available in this batch (from both syllabus schemes and individual records)
   const availableTopics = Array.from(
-    new Set(
-      students
+    new Set([
+      ...batchSchemes.flatMap((sch) => sch.topics.map((t) => t.title)),
+      ...students
         .filter((s) => s.isActive && s.batchIds?.includes(selectedBatchId))
-        .flatMap((s) => syllabi[s.id]?.topics?.map((t) => t.title) || [])
-    )
+        .flatMap((s) => syllabi[s.id]?.topics?.map((t) => t.title) || []),
+    ])
   );
+
+  const handleImportFromScheme = (schemeId: string) => {
+    const scheme = batchSchemes.find((s) => s.id === schemeId);
+    if (!scheme) return;
+
+    // Group scheme topics by unitTitle
+    const unitMap: Record<string, typeof scheme.topics> = {};
+    scheme.topics.forEach((t) => {
+      const unit = t.unitTitle || 'General Unit';
+      if (!unitMap[unit]) unitMap[unit] = [];
+      unitMap[unit].push(t);
+    });
+
+    const generatedSections: ExamSection[] = Object.entries(unitMap).map(([unit, unitTopics], idx) => {
+      const totalUnitMarks = unitTopics.reduce((sum, t) => sum + (t.weightageMarks || 5), 0);
+      const category = unit.toLowerCase().includes('writing')
+        ? 'Writing'
+        : unit.toLowerCase().includes('reading')
+        ? 'Reading'
+        : 'Grammar';
+
+      return {
+        id: `sec-sch-${Date.now().toString(36)}-${idx + 1}`,
+        name: `${unit}`,
+        category,
+        linkedTopicTitles: unitTopics.map((t) => t.title),
+        maxMarks: totalUnitMarks || 10,
+      };
+    });
+
+    if (generatedSections.length > 0) {
+      setNewSections(generatedSections);
+      if (!newTitle) {
+        setNewTitle(`${scheme.title} - Assessment`);
+      }
+    }
+  };
 
   const totalMaxMarks = newSections.reduce((sum, s) => sum + (Number(s.maxMarks) || 0), 0);
 
@@ -343,6 +385,57 @@ export const ExamManager: React.FC = () => {
                     Exclude from Report Average, but 0 on Public Leaderboard
                   </option>
                 </select>
+              </div>
+
+              {/* Syllabus Scheme Link & 1-Click Section Import */}
+              <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                    <BookOpen className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Select Topics from Syllabus Scheme:</span>
+                  </span>
+                  {batchSchemes.length > 0 && (
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-full">
+                      {batchSchemes.length} Scheme(s) Available
+                    </span>
+                  )}
+                </div>
+
+                {batchSchemes.length > 0 ? (
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <select
+                      value={selectedSchemeId}
+                      onChange={(e) => {
+                        setSelectedSchemeId(e.target.value);
+                        if (e.target.value) handleImportFromScheme(e.target.value);
+                      }}
+                      className="flex-1 px-3 py-2 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-dark-surface text-xs font-bold text-slate-800 dark:text-slate-200"
+                    >
+                      <option value="">-- Choose Syllabus Scheme to auto-generate sections & marks --</option>
+                      {batchSchemes.map((sch) => (
+                        <option key={sch.id} value={sch.id}>
+                          {sch.title} ({sch.topics.length} topics)
+                        </option>
+                      ))}
+                    </select>
+
+                    {selectedSchemeId && (
+                      <button
+                        type="button"
+                        onClick={() => handleImportFromScheme(selectedSchemeId)}
+                        className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Re-import</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    No syllabus schemes created for this batch yet. Go to{' '}
+                    <span className="font-bold text-emerald-600">Syllabus Schemes</span> to add a Half Yearly or Term syllabus.
+                  </p>
+                )}
               </div>
 
               {/* Section Builder */}

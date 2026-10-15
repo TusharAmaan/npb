@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useData } from '../../context/DataContext';
 import { useModal } from '../../context/ModalContext';
 import { useAuth, PRIMARY_ADMIN_EMAIL, isAuthorizedAdmin } from '../../context/AuthContext';
+import { isFirebaseConfigured } from '../../lib/firebase';
 import {
   Download,
   Upload,
@@ -22,6 +23,7 @@ import {
   Database,
   Code,
   X,
+  LogIn,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -38,9 +40,10 @@ export const SettingsView: React.FC = () => {
     batches,
     schools,
     students,
+    syllabusSchemes,
   } = useData();
 
-  const { currentUser } = useAuth();
+  const { currentUser, signInGoogle } = useAuth();
   const { confirm, alert } = useModal();
 
   // Branding states
@@ -73,6 +76,35 @@ export const SettingsView: React.FC = () => {
 
   // Push all local data into Cloud Firestore
   const handlePushToFirestore = async () => {
+    const isGoogleAdmin =
+      currentUser &&
+      !currentUser.isDevAdmin &&
+      currentUser.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase();
+
+    if (!isGoogleAdmin) {
+      const confirmLogin = await confirm({
+        title: 'Google Sign-In Required for Firestore Write',
+        message: `Your Cloud Firestore security rules require write operations to come from your authenticated Google account (${PRIMARY_ADMIN_EMAIL}).\n\nWould you like to sign in with Google now?`,
+        confirmText: 'Sign in with Google',
+        cancelText: 'Cancel',
+        variant: 'info',
+      });
+      if (confirmLogin) {
+        try {
+          await signInGoogle();
+        } catch (err: any) {
+          await alert({
+            title: 'Google Authentication Failed',
+            message: err?.message || 'Failed to authenticate with Google.',
+            variant: 'danger',
+          });
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+
     setIsPushing(true);
     const res = await pushAllDataToFirestore();
     setIsPushing(false);
@@ -80,13 +112,13 @@ export const SettingsView: React.FC = () => {
     if (res.success) {
       await alert({
         title: 'Cloud Database Synchronized!',
-        message: `Successfully uploaded ${res.count} records across all 10 collections into Google Cloud Firestore (batchmgt-6f7ad). You can now refresh your Firebase Console to see all database tables populated!`,
+        message: `Successfully uploaded ${res.count} records across all 11 collections into Google Cloud Firestore (batchmgt-6f7ad). You can now refresh your Firebase Console to see all database tables populated!`,
         variant: 'success',
       });
     } else {
       await alert({
         title: 'Cloud Synchronization Failed',
-        message: `${res.error}\n\nTo resolve this: Ensure you have pasted the security rules into your Firebase Console (Rules tab) and signed in with Google as ${PRIMARY_ADMIN_EMAIL}.`,
+        message: `${res.error}\n\nTo resolve this:\n1. Ensure you have pasted the security rules in Firebase Console (Rules tab).\n2. Ensure your domain (${window.location.hostname}) is listed under Firebase Console -> Authentication -> Settings -> Authorized Domains.\n3. Make sure you are signed in with Google as ${PRIMARY_ADMIN_EMAIL}.`,
         variant: 'danger',
       });
     }
@@ -211,6 +243,27 @@ service cloud.firestore {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {(!currentUser || currentUser.isDevAdmin || currentUser.email?.toLowerCase() !== PRIMARY_ADMIN_EMAIL.toLowerCase()) && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await signInGoogle();
+                  } catch (err: any) {
+                    await alert({
+                      title: 'Google Sign-In Error',
+                      message: err?.message || 'Failed to authenticate with Google.',
+                      variant: 'danger',
+                    });
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-white dark:bg-slate-900 text-slate-800 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition-all border border-slate-300 dark:border-slate-600 shadow-xs"
+              >
+                <LogIn className="w-3.5 h-3.5 text-light-indigo" />
+                <span>Sign in with Google ({PRIMARY_ADMIN_EMAIL})</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setShowRulesModal(true)}
@@ -233,28 +286,47 @@ service cloud.firestore {
         </div>
 
         {/* Diagnostic Status Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Firebase Cloud Engine</span>
+            <span className="font-bold text-xs flex items-center gap-1 mt-0.5 text-slate-800 dark:text-white">
+              {isFirebaseConfigured ? (
+                <span className="text-emerald-600 dark:text-wintergreen flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Active Connected
+                </span>
+              ) : (
+                <span className="text-amber-600 dark:text-radiant-yellow flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                  Local Storage Mode
+                </span>
+              )}
+            </span>
+          </div>
+
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Firebase Auth State</span>
-            <span className="font-bold text-xs text-slate-800 dark:text-white truncate block">
-              {currentUser?.email || 'Not Signed In via Google'}
+            <span className="font-bold text-xs text-slate-800 dark:text-white truncate block mt-0.5">
+              {currentUser?.email ? (currentUser.isDevAdmin ? 'Dev Local Session' : currentUser.email) : 'Not Signed In'}
             </span>
           </div>
 
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Admin Access Control</span>
-            <span className={`font-bold text-xs flex items-center gap-1.5 ${currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase() ? 'text-emerald-600 dark:text-wintergreen' : 'text-radiant-yellow'}`}>
-              <ShieldCheck className="w-3.5 h-3.5" />
-              {currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase()
-                ? 'Owner Verified (tushar.aman05@gmail.com)'
-                : 'Local Dev Mode (Sign in with Google for Cloud Writes)'}
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cloud Write Authorization</span>
+            <span className={`font-bold text-xs flex items-center gap-1 mt-0.5 ${currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase() && !currentUser.isDevAdmin ? 'text-emerald-600 dark:text-wintergreen' : 'text-radiant-yellow'}`}>
+              <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate">
+                {currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase() && !currentUser.isDevAdmin
+                  ? 'Owner Authorized'
+                  : 'Sign in to Google'}
+              </span>
             </span>
           </div>
 
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Local Data Ready to Sync</span>
-            <span className="font-bold text-xs text-slate-800 dark:text-white">
-              {batches.length} Batches • {schools.length} Schools • {students.length} Students
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Local Records Ready</span>
+            <span className="font-bold text-xs text-slate-800 dark:text-white block mt-0.5 truncate">
+              {batches.length}B • {schools.length}Sch • {students.length}Stu • {syllabusSchemes.length}Syl
             </span>
           </div>
         </div>
@@ -287,7 +359,7 @@ service cloud.firestore {
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-weird-green" />
                 <h3 className="font-black text-base text-slate-900 dark:text-white">
-                  Firestore Security Rules for {PRIMARY_ADMIN_EMAIL}
+                  Firestore Rules & Domain Authorization
                 </h3>
               </div>
               <button
@@ -299,11 +371,13 @@ service cloud.firestore {
               </button>
             </div>
 
-            <p className="text-xs text-slate-600 dark:text-slate-400">
-              Paste these rules into your <strong>Firebase Console &gt; Cloud Firestore &gt; Rules</strong> tab and click <strong>Publish</strong>. This strictly grants write access exclusively to <strong>{PRIMARY_ADMIN_EMAIL}</strong> while enabling public read for leaderboards and guardian reports.
-            </p>
+            <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 text-xs text-sky-900 dark:text-sky-300 space-y-1">
+              <p className="font-bold">Important 2-Step Setup Checklist:</p>
+              <p><strong>Step 1 (Security Rules):</strong> Paste the rules below into Firebase Console &gt; Cloud Firestore &gt; Rules tab and click <strong>Publish</strong>.</p>
+              <p><strong>Step 2 (Authorized Domains):</strong> Open Firebase Console &gt; Authentication &gt; Settings tab &gt; Authorized Domains. Ensure <code>{window.location.hostname}</code> is listed so Google Sign-in works on your live website!</p>
+            </div>
 
-            <pre className="p-3.5 rounded-xl bg-slate-900 text-slate-200 text-xs font-mono overflow-x-auto max-h-56">
+            <pre className="p-3.5 rounded-xl bg-slate-900 text-slate-200 text-xs font-mono overflow-x-auto max-h-52">
               {firestoreRulesText}
             </pre>
 

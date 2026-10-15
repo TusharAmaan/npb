@@ -37,6 +37,7 @@ import {
   HelpCircle,
   Award,
   Zap,
+  Building2,
 } from 'lucide-react';
 import { MasterSyllabusSelector } from './MasterSyllabusSelector';
 import { ClassRecordsView } from './ClassRecordsView';
@@ -144,6 +145,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
   const [attendanceRecords, setAttendanceRecords] = useState<
     Record<string, StudentSessionRecord>
   >({});
+  const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'present' | 'absent' | 'late' | 'excused'>('all');
 
   // Active batch students
   const activeBatch = batches.find((b) => b.id === selectedBatchId) || batches[0];
@@ -979,250 +981,387 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
             </div>
           </div>
 
-          {/* Student Attendance & Detailed Recording Roster */}
-          <div className="bg-white dark:bg-dark-surface rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs overflow-hidden">
-            <div className="p-5 border-b border-slate-100 dark:border-dark-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
-                    Student Attendance Roster ({enrolledStudents.length} Students)
-                  </h3>
-                  {hasInClassExam && (
-                    <span className="text-xs px-2.5 py-0.5 rounded-full font-black bg-radiant-yellow/20 text-amber-900 dark:text-radiant-yellow">
-                      Quiz Active (/{examMaxMarks} marks)
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Tap P (Present), A (Absent), L (Late), E (Excused). Record quiz score and teacher observations.
-                </p>
-              </div>
+          {/* Student Attendance & Detailed Recording Roster (Mobile-First Premium UI) */}
+          {(() => {
+            const presentCount = enrolledStudents.filter(
+              (s) => (attendanceRecords[s.id]?.attendance || 'present') === 'present'
+            ).length;
+            const absentCount = enrolledStudents.filter(
+              (s) => attendanceRecords[s.id]?.attendance === 'absent'
+            ).length;
+            const lateCount = enrolledStudents.filter(
+              (s) => attendanceRecords[s.id]?.attendance === 'late'
+            ).length;
+            const excusedCount = enrolledStudents.filter(
+              (s) => attendanceRecords[s.id]?.attendance === 'excused'
+            ).length;
+            const attendanceRate =
+              enrolledStudents.length > 0 ? Math.round((presentCount / enrolledStudents.length) * 100) : 0;
 
-              {/* Absent broadcast button */}
-              {enrolledStudents.some((s) => attendanceRecords[s.id]?.attendance === 'absent') && (
-                <button
-                  type="button"
-                  onClick={handleBroadcastAbsentWhatsApp}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-light-red/10 text-red-700 dark:text-light-red hover:bg-light-red/20 transition-all border border-light-red/20"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Notify Absentees on WhatsApp</span>
-                </button>
-              )}
-            </div>
+            const displayedStudents = enrolledStudents.filter((stu) => {
+              if (attendanceFilter === 'all') return true;
+              const status = attendanceRecords[stu.id]?.attendance || 'present';
+              return status === attendanceFilter;
+            });
 
-            {/* Zero Students Alert Box */}
-            {enrolledStudents.length === 0 ? (
-              <div className="p-8 text-center space-y-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-radiant-yellow flex items-center justify-center mx-auto">
-                  <UserPlus className="w-6 h-6" />
-                </div>
-                <div className="max-w-md mx-auto space-y-1">
-                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                    No Students Enrolled in {activeBatch?.name || 'this Batch'}
-                  </h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Students must be assigned to this batch in the Student Directory to take attendance. You can still log the batch curriculum topics and lesson notes above.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/admin/students')}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-light-indigo text-white hover:bg-light-slate-blue transition-all shadow-xs"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>Go to Student Directory</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* Enrolled Students Roster */
-              <div className="divide-y divide-slate-100 dark:divide-dark-border">
-                {enrolledStudents.map((stu) => {
-                  const record = attendanceRecords[stu.id] || {
-                    studentId: stu.id,
-                    attendance: 'present',
-                    topicsCoveredForStudent: [],
-                    inClassQuizScore: 0,
-                    remarks: '',
-                  };
-                  const currentStatus = record.attendance;
-
-                  // Find pending sheets for this student
-                  const unreceivedSheets = sheets.filter(
-                    (sh) =>
-                      sh.batchId === activeBatch.id &&
-                      (sh.targetStudentIds?.length === 0 || sh.targetStudentIds?.includes(stu.id)) &&
-                      !sh.receivedByStudentIds?.includes(stu.id)
-                  );
-
-                  return (
-                    <div
-                      key={stu.id}
-                      className={`p-4 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                        currentStatus === 'absent'
-                          ? 'bg-light-red/5 dark:bg-light-red/10'
-                          : currentStatus === 'late'
-                          ? 'bg-radiant-yellow/5 dark:bg-radiant-yellow/10'
-                          : currentStatus === 'excused'
-                          ? 'bg-spiro-disco-ball/5 dark:bg-spiro-disco-ball/10'
-                          : ''
-                      }`}
-                    >
-                      {/* Left: Roll, Name, School & In-Class Score Input */}
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <span className="font-extrabold text-xs px-2.5 py-1.5 rounded-lg bg-radiant-yellow/20 text-amber-900 dark:text-radiant-yellow min-w-[50px] text-center">
-                          {stu.publicRollNo}
+            return (
+              <div className="bg-white dark:bg-dark-surface rounded-3xl border border-slate-200/80 dark:border-dark-border shadow-xs overflow-hidden">
+                {/* Roster Header */}
+                <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-dark-border space-y-3.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-black text-base text-slate-900 dark:text-white">
+                          Student Attendance Roster
+                        </h3>
+                        <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                          {enrolledStudents.length} Students
                         </span>
+                        {hasInClassExam && (
+                          <span className="text-xs px-2.5 py-0.5 rounded-full font-black bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                            Quiz Active (/{examMaxMarks} marks)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Tap P (Present), A (Absent), L (Late), E (Excused) to mark roster and log observations.
+                      </p>
+                    </div>
 
-                        <div className="space-y-1 flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
-                              {stu.name}
-                            </span>
-                            {stu.streakCount > 0 && (
-                              <span className="inline-flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-weird-green/20 text-emerald-800 dark:text-wintergreen">
-                                <Flame className="w-3 h-3 fill-current" />
-                                {stu.streakCount}d
+                    {/* Quick Bulk Actions */}
+                    <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleMarkAllPresent}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 transition-colors shadow-2xs"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        <span>Mark All Present</span>
+                      </button>
+
+                      {absentCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleBroadcastAbsentWhatsApp}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-800 transition-colors shadow-2xs"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>WhatsApp Absentees ({absentCount})</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Summary Metric Pills & Mobile Filter Tabs */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                    {/* Filter Chips */}
+                    <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full custom-scrollbar">
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceFilter('all')}
+                        className={`px-3 py-1 rounded-xl text-xs font-bold transition-all border ${
+                          attendanceFilter === 'all'
+                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white shadow-2xs'
+                            : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        All ({enrolledStudents.length})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceFilter('present')}
+                        className={`px-3 py-1 rounded-xl text-xs font-bold transition-all border ${
+                          attendanceFilter === 'present'
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                            : 'bg-emerald-50/60 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/40'
+                        }`}
+                      >
+                        Present ({presentCount})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceFilter('absent')}
+                        className={`px-3 py-1 rounded-xl text-xs font-bold transition-all border ${
+                          attendanceFilter === 'absent'
+                            ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                            : 'bg-rose-50/60 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800/40'
+                        }`}
+                      >
+                        Absent ({absentCount})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceFilter('late')}
+                        className={`px-3 py-1 rounded-xl text-xs font-bold transition-all border ${
+                          attendanceFilter === 'late'
+                            ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                            : 'bg-amber-50/60 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/40'
+                        }`}
+                      >
+                        Late ({lateCount})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceFilter('excused')}
+                        className={`px-3 py-1 rounded-xl text-xs font-bold transition-all border ${
+                          attendanceFilter === 'excused'
+                            ? 'bg-sky-600 text-white border-sky-600 shadow-2xs'
+                            : 'bg-sky-50/60 dark:bg-sky-950/20 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-800/40'
+                        }`}
+                      >
+                        Excused ({excusedCount})
+                      </button>
+                    </div>
+
+                    {/* Overall Turnout Rate */}
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 ml-auto">
+                      <span>Turnout:</span>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-black">
+                        {attendanceRate}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Zero Students Alert Box */}
+                {enrolledStudents.length === 0 ? (
+                  <div className="p-8 text-center space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-radiant-yellow flex items-center justify-center mx-auto">
+                      <UserPlus className="w-6 h-6" />
+                    </div>
+                    <div className="max-w-md mx-auto space-y-1">
+                      <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                        No Students Enrolled in {activeBatch?.name || 'this Batch'}
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Students must be assigned to this batch in the Student Directory to take attendance.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => navigate('/admin/students')}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-light-indigo text-white hover:bg-light-slate-blue transition-all shadow-xs"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Go to Student Directory</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Enrolled Students Cards List (Optimized for Mobile) */
+                  <div className="p-3 sm:p-5 space-y-3">
+                    {displayedStudents.map((stu) => {
+                      const record = attendanceRecords[stu.id] || {
+                        studentId: stu.id,
+                        attendance: 'present',
+                        topicsCoveredForStudent: [],
+                        inClassQuizScore: 0,
+                        remarks: '',
+                      };
+                      const currentStatus = record.attendance;
+
+                      // Find pending sheets for this student
+                      const unreceivedSheets = sheets.filter(
+                        (sh) =>
+                          sh.batchId === activeBatch.id &&
+                          (sh.targetStudentIds?.length === 0 || sh.targetStudentIds?.includes(stu.id)) &&
+                          !sh.receivedByStudentIds?.includes(stu.id)
+                      );
+
+                      return (
+                        <div
+                          key={stu.id}
+                          className={`p-3.5 sm:p-4 rounded-2xl border transition-all space-y-3 shadow-2xs ${
+                            currentStatus === 'present'
+                              ? 'border-l-4 border-l-emerald-500 border-slate-200/80 dark:border-slate-800 bg-white dark:bg-dark-surface'
+                              : currentStatus === 'absent'
+                              ? 'border-l-4 border-l-rose-500 border-rose-200 dark:border-rose-900/50 bg-rose-50/30 dark:bg-rose-950/15'
+                              : currentStatus === 'late'
+                              ? 'border-l-4 border-l-amber-500 border-amber-200 dark:border-amber-900/50 bg-amber-50/30 dark:bg-amber-950/15'
+                              : 'border-l-4 border-l-sky-500 border-sky-200 dark:border-sky-900/50 bg-sky-50/30 dark:bg-sky-950/15'
+                          }`}
+                        >
+                          {/* Card Top: Roll, Name, Streak, Status, & WhatsApp Alert */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="px-2.5 py-1 rounded-xl text-xs font-mono font-black bg-slate-900 text-white dark:bg-slate-800 dark:text-emerald-400 border border-slate-700/60 shadow-2xs shrink-0">
+                                {stu.publicRollNo}
                               </span>
+
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 className="font-black text-sm sm:text-base text-slate-900 dark:text-white truncate">
+                                    {stu.name}
+                                  </h4>
+                                  {stu.streakCount > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0">
+                                      <Flame className="w-3 h-3 fill-current" />
+                                      {stu.streakCount}d
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                  <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                                  <span className="truncate">{stu.schoolName}</span>
+                                  {stu.section && <span className="opacity-75">• Sec {stu.section}</span>}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Right: Status Pill & WhatsApp Notice */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {(currentStatus === 'absent' || currentStatus === 'late') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendAttendanceWhatsApp(stu, currentStatus)}
+                                  title="Send Instant WhatsApp Notice to Guardian"
+                                  className="p-1.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-wintergreen hover:bg-emerald-500/20 transition-all border border-emerald-500/20"
+                                >
+                                  <PhoneCall className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              <span
+                                className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                                  currentStatus === 'present'
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                                    : currentStatus === 'absent'
+                                    ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                                    : currentStatus === 'late'
+                                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                                    : 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30'
+                                }`}
+                              >
+                                {currentStatus}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Full-Width Touch-Friendly 4-Button Attendance Bar (Mobile Optimized) */}
+                          <div className="grid grid-cols-4 gap-1.5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
+                            {/* Present Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleSetStatus(stu.id, 'present')}
+                              className={`h-10 sm:h-11 rounded-xl flex items-center justify-center gap-1 font-bold transition-all ${
+                                currentStatus === 'present'
+                                  ? 'bg-emerald-500 text-white font-black shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400/40 scale-[1.02]'
+                                  : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900'
+                              }`}
+                            >
+                              <span className="font-black text-sm">P</span>
+                              <span className="text-[10px] hidden sm:inline">Present</span>
+                            </button>
+
+                            {/* Absent Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleSetStatus(stu.id, 'absent')}
+                              className={`h-10 sm:h-11 rounded-xl flex items-center justify-center gap-1 font-bold transition-all ${
+                                currentStatus === 'absent'
+                                  ? 'bg-rose-500 text-white font-black shadow-md shadow-rose-500/30 ring-2 ring-rose-400/40 scale-[1.02]'
+                                  : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900'
+                              }`}
+                            >
+                              <span className="font-black text-sm">A</span>
+                              <span className="text-[10px] hidden sm:inline">Absent</span>
+                            </button>
+
+                            {/* Late Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleSetStatus(stu.id, 'late')}
+                              className={`h-10 sm:h-11 rounded-xl flex items-center justify-center gap-1 font-bold transition-all ${
+                                currentStatus === 'late'
+                                  ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/30 ring-2 ring-amber-400/40 scale-[1.02]'
+                                  : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900'
+                              }`}
+                            >
+                              <span className="font-black text-sm">L</span>
+                              <span className="text-[10px] hidden sm:inline">Late</span>
+                            </button>
+
+                            {/* Excused Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleSetStatus(stu.id, 'excused')}
+                              className={`h-10 sm:h-11 rounded-xl flex items-center justify-center gap-1 font-bold transition-all ${
+                                currentStatus === 'excused'
+                                  ? 'bg-sky-500 text-white font-black shadow-md shadow-sky-500/30 ring-2 ring-sky-400/40 scale-[1.02]'
+                                  : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 hover:text-slate-900'
+                              }`}
+                            >
+                              <span className="font-black text-sm">E</span>
+                              <span className="text-[10px] hidden sm:inline">Excused</span>
+                            </button>
+                          </div>
+
+                          {/* Card Bottom: Quiz Score & Observation Input */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                            {/* Quiz Score Input if Exam active */}
+                            {hasInClassExam && (
+                              <div className="flex items-center justify-between sm:justify-start gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
+                                <span className="font-bold text-amber-800 dark:text-amber-300">Quiz Score:</span>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={examMaxMarks}
+                                    value={record.inClassQuizScore ?? 0}
+                                    onChange={(e) => handleSetQuizScore(stu.id, Number(e.target.value))}
+                                    disabled={currentStatus === 'absent'}
+                                    className="w-12 px-1.5 py-0.5 rounded-lg text-xs font-black text-center bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 disabled:opacity-40"
+                                  />
+                                  <span className="text-slate-500 font-bold">/{examMaxMarks}</span>
+                                </div>
+                              </div>
                             )}
-                          </div>
 
-                          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                            <span>{stu.schoolName}</span>
-                            {stu.section && <span>• Sec {stu.section}</span>}
-                          </div>
-
-                          {/* Student remarks / notes input */}
-                          <div className="pt-1 flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={record.remarks || ''}
-                              onChange={(e) => handleSetStudentRemark(stu.id, e.target.value)}
-                              placeholder="Observation / note (e.g. good mastery, needs revision)"
-                              className="px-2 py-1 rounded-lg text-[11px] border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 w-full max-w-xs focus:ring-1 focus:ring-light-indigo"
-                            />
+                            {/* Remarks / Observation Input with Icon */}
+                            <div className="relative flex-1">
+                              <MessageSquare className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                              <input
+                                type="text"
+                                value={record.remarks || ''}
+                                onChange={(e) => handleSetStudentRemark(stu.id, e.target.value)}
+                                placeholder="Observation / note (e.g. good mastery, needs revision)"
+                                className="w-full pl-9 pr-3 py-1.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60 text-slate-900 dark:text-white focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-light-indigo/20 transition-all"
+                              />
+                            </div>
                           </div>
 
                           {/* Pending Sheet Handover Alert Banner */}
                           {unreceivedSheets.length > 0 && (
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                               {unreceivedSheets.map((sh) => (
                                 <label
                                   key={sh.id}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-hammam-blue/20 text-teal-900 dark:text-hammam-blue border border-hammam-blue/40 shadow-xs cursor-pointer hover:bg-hammam-blue/30 transition-all"
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-bold bg-teal-500/10 text-teal-800 dark:text-teal-300 border border-teal-500/30 shadow-2xs cursor-pointer hover:bg-teal-500/20 transition-all"
                                 >
                                   <input
                                     type="checkbox"
                                     onChange={() => toggleSheetDistributed(sh.id, stu.id)}
-                                    className="rounded text-teal-600 focus:ring-teal-500"
+                                    className="rounded text-teal-600 focus:ring-teal-500 w-3.5 h-3.5"
                                   />
-                                  <FileSpreadsheet className="w-3 h-3" />
-                                  <span>Needs {sh.sheetNumber} (Tap to Hand Over)</span>
+                                  <FileSpreadsheet className="w-3 h-3 text-teal-600 dark:text-teal-400" />
+                                  <span>Needs Sheet #{sh.sheetNumber} (Tap to Deliver)</span>
                                 </label>
                               ))}
                             </div>
                           )}
                         </div>
-                      </div>
-
-                      {/* Right: Quiz Score & Attendance Status Buttons */}
-                      <div className="flex items-center gap-3 self-end sm:self-auto flex-wrap">
-                        {/* In-Class Quiz Score Field */}
-                        {hasInClassExam && (
-                          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase">Score:</span>
-                            <input
-                              type="number"
-                              min={0}
-                              max={examMaxMarks}
-                              value={record.inClassQuizScore ?? 0}
-                              onChange={(e) => handleSetQuizScore(stu.id, Number(e.target.value))}
-                              disabled={currentStatus === 'absent'}
-                              className="w-12 px-1.5 py-0.5 rounded text-xs font-black text-center bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 disabled:opacity-40"
-                            />
-                            <span className="text-[10px] font-bold text-slate-400">/{examMaxMarks}</span>
-                          </div>
-                        )}
-
-                        {/* Absent WhatsApp Dispatch Button */}
-                        {(currentStatus === 'absent' || currentStatus === 'late') && (
-                          <button
-                            type="button"
-                            onClick={() => handleSendAttendanceWhatsApp(stu, currentStatus)}
-                            title="Send Instant WhatsApp Notice to Guardian"
-                            className="p-2.5 rounded-xl bg-weird-green/10 text-emerald-600 dark:text-wintergreen hover:bg-weird-green/20 transition-all border border-weird-green/20"
-                          >
-                            <PhoneCall className="w-4 h-4" />
-                          </button>
-                        )}
-
-                        {/* P / A / L / E Pills */}
-                        <div className="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
-                          {/* Present Pill */}
-                          <button
-                            type="button"
-                            onClick={() => handleSetStatus(stu.id, 'present')}
-                            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg font-black text-xs sm:text-sm transition-all duration-150 ${
-                              currentStatus === 'present'
-                                ? 'bg-weird-green text-slate-950 shadow-md shadow-weird-green/30 scale-105'
-                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
-                            }`}
-                            title="Present"
-                          >
-                            P
-                          </button>
-
-                          {/* Absent Pill */}
-                          <button
-                            type="button"
-                            onClick={() => handleSetStatus(stu.id, 'absent')}
-                            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg font-black text-xs sm:text-sm transition-all duration-150 ${
-                              currentStatus === 'absent'
-                                ? 'bg-light-red text-white shadow-md shadow-light-red/30 scale-105'
-                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
-                            }`}
-                            title="Absent"
-                          >
-                            A
-                          </button>
-
-                          {/* Late Pill */}
-                          <button
-                            type="button"
-                            onClick={() => handleSetStatus(stu.id, 'late')}
-                            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg font-black text-xs sm:text-sm transition-all duration-150 ${
-                              currentStatus === 'late'
-                                ? 'bg-radiant-yellow text-slate-950 shadow-md shadow-radiant-yellow/30 scale-105'
-                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
-                            }`}
-                            title="Late"
-                          >
-                            L
-                          </button>
-
-                          {/* Excused Pill */}
-                          <button
-                            type="button"
-                            onClick={() => handleSetStatus(stu.id, 'excused')}
-                            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg font-black text-xs sm:text-sm transition-all duration-150 ${
-                              currentStatus === 'excused'
-                                ? 'bg-spiro-disco-ball text-white shadow-md shadow-spiro-disco-ball/30 scale-105'
-                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
-                            }`}
-                            title="Excused"
-                          >
-                            E
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            );
+          })()}
         </div>
       )}
     </div>

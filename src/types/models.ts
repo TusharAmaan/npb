@@ -76,6 +76,8 @@ export interface StudentSyllabusTopic {
   completedDate?: string;
   missedSessionIds: string[]; // Tracks if student was absent when topic was covered
   examMasteryAvg?: number; // Auto-calculated from section-wise exam tags (0-100%)
+  priority?: TopicPriority;
+  targetDate?: string;
   notes?: string;
 }
 
@@ -83,6 +85,50 @@ export interface StudentSyllabus {
   studentId: string;
   updatedAt: number;
   topics: StudentSyllabusTopic[];
+}
+
+export type SyllabusTermType =
+  | 'half_yearly'
+  | 'first_term'
+  | 'second_term'
+  | 'pre_test'
+  | 'test_exam'
+  | 'final_board'
+  | 'custom';
+
+export type SyllabusScopeType =
+  | 'batch_wide'
+  | 'batch_and_schools'
+  | 'batch_and_students'
+  | 'global_template';
+
+export type TopicPriority = 'high' | 'medium' | 'low';
+
+export interface SyllabusSchemeTopic {
+  id: string;
+  unitTitle: string; // e.g. "Unit 1: Grammar Core", "Unit 2: Guided Writing"
+  title: string; // e.g. "Modifiers", "Narration", "Formal Letter"
+  priority: TopicPriority;
+  weightageMarks?: number; // e.g. 5, 10
+  status: 'not_started' | 'in_progress' | 'completed' | 'revision_needed';
+  targetDate?: string; // Expected completion date
+  lastTaughtDate?: string;
+  notes?: string;
+}
+
+export interface SyllabusScheme {
+  id: string;
+  title: string; // e.g. "HSC 2026 Half Yearly English 2nd Paper Syllabus"
+  termType: SyllabusTermType;
+  scopeType: SyllabusScopeType;
+  targetBatchId: string;
+  targetSchoolIds?: string[]; // If targeted to specific school(s)
+  targetStudentIds?: string[]; // If customized for specific student(s)
+  academicYear?: string; // e.g. "2025–2026"
+  description?: string;
+  topics: SyllabusSchemeTopic[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';

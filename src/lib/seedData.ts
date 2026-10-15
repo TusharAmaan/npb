@@ -9,6 +9,7 @@ import {
   School,
   Student,
   StudentSyllabus,
+  SyllabusScheme,
 } from '../types/models';
 
 export const initialSchools: School[] = [
@@ -677,3 +678,64 @@ export const initialGlobalSettings: GlobalSettings = {
     },
   },
 };
+
+export const initialSyllabusSchemes: SyllabusScheme[] = [
+  {
+    id: 'scheme-hsc-half-yearly-2026',
+    title: 'HSC 2026 Half Yearly English 2nd Paper Syllabus',
+    termType: 'half_yearly',
+    scopeType: 'batch_wide',
+    targetBatchId: 'batch-hsc-2027',
+    academicYear: '2025–2026',
+    description: 'Comprehensive Half Yearly Exam Syllabus covering Grammar Core rules, Guided Writing, and Dhaka Board question exercises.',
+    topics: [
+      { id: 'st-1', unitTitle: 'Unit 1: Grammar Core', title: 'Modifiers (Pre & Post Modifiers)', priority: 'high', weightageMarks: 5, status: 'completed', targetDate: '2026-10-15', lastTaughtDate: '2026-10-15' },
+      { id: 'st-2', unitTitle: 'Unit 1: Grammar Core', title: 'Narration (Direct & Indirect Speech)', priority: 'high', weightageMarks: 5, status: 'in_progress', targetDate: '2026-10-22', lastTaughtDate: '2026-10-15' },
+      { id: 'st-3', unitTitle: 'Unit 1: Grammar Core', title: 'Right Form of Verbs', priority: 'high', weightageMarks: 7, status: 'not_started', targetDate: '2026-10-29' },
+      { id: 'st-4', unitTitle: 'Unit 1: Grammar Core', title: 'Special Phrases (was born, would rather, had better)', priority: 'medium', weightageMarks: 5, status: 'completed', targetDate: '2026-10-08', lastTaughtDate: '2026-10-08' },
+      { id: 'st-5', unitTitle: 'Unit 1: Grammar Core', title: 'Sentence Connectors & Linkers', priority: 'medium', weightageMarks: 5, status: 'revision_needed', targetDate: '2026-11-05' },
+      { id: 'st-6', unitTitle: 'Unit 2: Guided Writing', title: 'Formal Letter & Email Writing', priority: 'high', weightageMarks: 8, status: 'in_progress', targetDate: '2026-11-12' },
+      { id: 'st-7', unitTitle: 'Unit 2: Guided Writing', title: 'Report Writing (Newspaper & Investigation)', priority: 'high', weightageMarks: 8, status: 'not_started', targetDate: '2026-11-19' },
+      { id: 'st-8', unitTitle: 'Unit 2: Guided Writing', title: 'Paragraph Writing (Cause & Effect)', priority: 'medium', weightageMarks: 10, status: 'not_started', targetDate: '2026-11-26' },
+      { id: 'st-9', unitTitle: 'Unit 3: Board Questions', title: 'Dhaka Board 2024 Question Solution', priority: 'high', weightageMarks: 15, status: 'not_started', targetDate: '2026-12-05' },
+    ],
+    createdAt: Date.now() - 5000000,
+    updatedAt: Date.now() - 1000000,
+  },
+  {
+    id: 'scheme-ndc-first-term-2026',
+    title: 'Notre Dame College 1st Term Special Custom Syllabus',
+    termType: 'first_term',
+    scopeType: 'batch_and_schools',
+    targetBatchId: 'batch-hsc-2027',
+    targetSchoolIds: ['sch-3'], // Notre Dame College
+    academicYear: '2025–2026',
+    description: 'Customized 1st Term syllabus aligned specifically with Notre Dame College English curriculum and college model test pattern.',
+    topics: [
+      { id: 'st-ndc-1', unitTitle: 'Unit 1: Grammar Core', title: 'Completing Sentences (Clauses & Conditionals)', priority: 'high', weightageMarks: 5, status: 'in_progress', targetDate: '2026-10-25' },
+      { id: 'st-ndc-2', unitTitle: 'Unit 1: Grammar Core', title: 'Use of Prepositions & Phrasal Verbs', priority: 'high', weightageMarks: 7, status: 'revision_needed', targetDate: '2026-11-02' },
+      { id: 'st-ndc-3', unitTitle: 'Unit 2: Guided Writing', title: 'Summary Writing (Textual Passages)', priority: 'high', weightageMarks: 10, status: 'not_started', targetDate: '2026-11-10' },
+      { id: 'st-ndc-4', unitTitle: 'Unit 3: Test Papers', title: 'Notre Dame College 2024 Test Paper Analysis', priority: 'high', weightageMarks: 20, status: 'not_started', targetDate: '2026-11-20' },
+    ],
+    createdAt: Date.now() - 4000000,
+    updatedAt: Date.now() - 800000,
+  },
+  {
+    id: 'scheme-ssc-pretest-2026',
+    title: 'SSC 2026 Pre-Test Board Standard Syllabus',
+    termType: 'pre_test',
+    scopeType: 'batch_wide',
+    targetBatchId: 'batch-ssc-2026',
+    academicYear: '2025–2026',
+    description: 'SSC Class 10 full board standard pre-test preparation syllabus.',
+    topics: [
+      { id: 'st-ssc-1', unitTitle: 'Unit 1: SSC Grammar', title: 'Transformation of Sentences', priority: 'high', weightageMarks: 5, status: 'completed', targetDate: '2026-10-10', lastTaughtDate: '2026-10-10' },
+      { id: 'st-ssc-2', unitTitle: 'Unit 1: SSC Grammar', title: 'Tag Questions & Suffix-Prefix', priority: 'medium', weightageMarks: 5, status: 'completed', targetDate: '2026-10-15', lastTaughtDate: '2026-10-15' },
+      { id: 'st-ssc-3', unitTitle: 'Unit 1: SSC Grammar', title: 'Right Form of Verbs & Punctuation', priority: 'high', weightageMarks: 10, status: 'in_progress', targetDate: '2026-10-25' },
+      { id: 'st-ssc-4', unitTitle: 'Unit 2: SSC Composition', title: 'CV with Cover Letter & Paragraph', priority: 'high', weightageMarks: 12, status: 'not_started', targetDate: '2026-11-05' },
+    ],
+    createdAt: Date.now() - 3500000,
+    updatedAt: Date.now() - 500000,
+  },
+];
+
