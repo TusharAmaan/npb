@@ -92,16 +92,48 @@ export interface StudentSessionRecord {
   attendance: AttendanceStatus;
   topicsCoveredForStudent: string[]; // Topic titles/IDs covered in this class
   remarks?: string;
+  inClassQuizScore?: number; // Score obtained if in-class exam/quiz was conducted
+  quizMaxMarks?: number;
+  lateMinutes?: number; // If late, arrival delay in minutes
+  distributedSheetIds?: string[]; // IDs of lecture sheets handed out to this student
+}
+
+export interface InClassExamDetail {
+  hasExam: boolean;
+  examId?: string; // Auto-synced ID into exam database
+  title: string;
+  maxMarks: number;
+  linkedTopicTitles: string[];
+  classAverage?: number;
+  highestScore?: number;
+}
+
+export interface AssignedHomeworkDetail {
+  hasHomework: boolean;
+  homeworkId?: string; // Auto-synced ID into homework database
+  title: string;
+  dueDate: string;
+  description?: string;
+  relatedTopics: string[];
 }
 
 export interface ClassSession {
   id: string;
   batchId: string;
   date: string; // YYYY-MM-DD
+  startTime?: string; // e.g. "18:30"
+  endTime?: string; // e.g. "19:30"
+  routineSlotId?: string; // If selected from weekly schedule
   sessionType: 'regular' | 'extra' | 'makeup';
+  customTitle?: string; // e.g. "Board Solves Marathon" or "Scheduled Routine Class"
   generalLessonSummary: string; // Batch-level log of what was taught today
   topicsTaught: string[]; // Topics taught in this session
+  topicProgressStatus?: 'in_progress' | 'completed';
   records: Record<string, StudentSessionRecord>; // Keyed by studentId
+  inClassExam?: InClassExamDetail;
+  assignedHomework?: AssignedHomeworkDetail;
+  distributedSheetIds?: string[]; // Lecture sheet IDs handed over during this session
+  nextClassLessonPlan?: string; // Reminder plan for upcoming class
   createdAt: number;
 }
 

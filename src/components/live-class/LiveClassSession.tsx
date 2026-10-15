@@ -6,6 +6,8 @@ import {
   ClassSession,
   StudentSessionRecord,
   WeeklyDay,
+  InClassExamDetail,
+  AssignedHomeworkDetail,
 } from '../../types/models';
 import { createWhatsAppLink, WhatsAppTemplates } from '../../lib/whatsappTemplates';
 import {
@@ -25,6 +27,16 @@ import {
   UserPlus,
   ChevronRight,
   RotateCcw,
+  GraduationCap,
+  BookOpenCheck,
+  PlusCircle,
+  Copy,
+  Layers,
+  Send,
+  MessageSquare,
+  HelpCircle,
+  Award,
+  Zap,
 } from 'lucide-react';
 import { MasterSyllabusSelector } from './MasterSyllabusSelector';
 import { ClassRecordsView } from './ClassRecordsView';
@@ -32,6 +44,8 @@ import { ClassRecordsView } from './ClassRecordsView';
 interface LiveClassSessionProps {
   defaultTab?: 'conduct' | 'records';
 }
+
+const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab = 'conduct' }) => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -87,15 +101,44 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
   const [sessionDate, setSessionDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
+  const [startTime, setStartTime] = useState<string>('18:30');
+  const [endTime, setEndTime] = useState<string>('19:30');
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+
+  // Session mode: 'regular' | 'extra' | 'makeup'
   const [sessionType, setSessionType] = useState<'regular' | 'extra' | 'makeup'>(
     (searchParams.get('type') as any) || 'regular'
   );
+  const [customTitle, setCustomTitle] = useState<string>('');
+
+  // Lesson & Syllabus states
   const [lessonSummary, setLessonSummary] = useState<string>('');
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [targetTopicStatus, setTargetTopicStatus] = useState<'in_progress' | 'completed'>(
     'completed'
   );
+
+  // In-Class Exam / Pop Quiz states
+  const [hasInClassExam, setHasInClassExam] = useState<boolean>(false);
+  const [examTitle, setExamTitle] = useState<string>('In-Class Pop Quiz');
+  const [examMaxMarks, setExamMaxMarks] = useState<number>(10);
+
+  // Assigned Homework states
+  const [hasAssignedHomework, setHasAssignedHomework] = useState<boolean>(false);
+  const [homeworkTitle, setHomeworkTitle] = useState<string>('');
+  const [homeworkDueDate, setHomeworkDueDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    return d.toISOString().split('T')[0];
+  });
+  const [homeworkDescription, setHomeworkDescription] = useState<string>('');
+
+  // Next class lesson plan memo
+  const [nextClassLessonPlan, setNextClassLessonPlan] = useState<string>('');
+
+  // Feedback states
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
 
   // Map of studentId -> StudentSessionRecord
   const [attendanceRecords, setAttendanceRecords] = useState<
@@ -122,6 +165,27 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
       setLessonSummary(existing.generalLessonSummary || '');
       setSelectedTopics(existing.topicsTaught || []);
       setSessionType(existing.sessionType);
+      setCustomTitle(existing.customTitle || '');
+      setStartTime(existing.startTime || '18:30');
+      setEndTime(existing.endTime || '19:30');
+      setNextClassLessonPlan(existing.nextClassLessonPlan || '');
+
+      if (existing.inClassExam?.hasExam) {
+        setHasInClassExam(true);
+        setExamTitle(existing.inClassExam.title || 'In-Class Pop Quiz');
+        setExamMaxMarks(existing.inClassExam.maxMarks || 10);
+      } else {
+        setHasInClassExam(false);
+      }
+
+      if (existing.assignedHomework?.hasHomework) {
+        setHasAssignedHomework(true);
+        setHomeworkTitle(existing.assignedHomework.title || '');
+        setHomeworkDueDate(existing.assignedHomework.dueDate || '');
+        setHomeworkDescription(existing.assignedHomework.description || '');
+      } else {
+        setHasAssignedHomework(false);
+      }
     } else {
       // Default all enrolled students to 'present'
       const defaultRecords: Record<string, StudentSessionRecord> = {};
@@ -130,12 +194,25 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
           studentId: stu.id,
           attendance: 'present',
           topicsCoveredForStudent: [],
+          inClassQuizScore: 0,
+          remarks: '',
         };
       });
       setAttendanceRecords(defaultRecords);
-      // If new session and no existing data, reset summary & topics
       setLessonSummary('');
       setSelectedTopics([]);
+      setHasInClassExam(false);
+      setHasAssignedHomework(false);
+      setNextClassLessonPlan('');
+      setCustomTitle('');
+
+      // Auto-set routine slot if today matches
+      const todaySlot = activeBatch.weeklyRoutine?.find((s) => s.dayOfWeek === todayDay);
+      if (todaySlot) {
+        setStartTime(todaySlot.startTime);
+        setEndTime(todaySlot.endTime);
+        setSelectedSlotId(`${todaySlot.dayOfWeek}-${todaySlot.startTime}`);
+      }
     }
   }, [selectedBatchId, sessionDate]);
 
@@ -148,15 +225,46 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
         setSelectedBatchId(targetSession.batchId);
         setSessionDate(targetSession.date);
         setSessionType(targetSession.sessionType);
+        setCustomTitle(targetSession.customTitle || '');
         setLessonSummary(targetSession.generalLessonSummary || '');
         setSelectedTopics(targetSession.topicsTaught || []);
         setAttendanceRecords(targetSession.records || {});
+        setStartTime(targetSession.startTime || '18:30');
+        setEndTime(targetSession.endTime || '19:30');
+        setNextClassLessonPlan(targetSession.nextClassLessonPlan || '');
+        if (targetSession.inClassExam?.hasExam) {
+          setHasInClassExam(true);
+          setExamTitle(targetSession.inClassExam.title);
+          setExamMaxMarks(targetSession.inClassExam.maxMarks);
+        }
+        if (targetSession.assignedHomework?.hasHomework) {
+          setHasAssignedHomework(true);
+          setHomeworkTitle(targetSession.assignedHomework.title);
+          setHomeworkDueDate(targetSession.assignedHomework.dueDate);
+          setHomeworkDescription(targetSession.assignedHomework.description || '');
+        }
         setActiveTab('conduct');
       }
     }
   }, [searchParams, sessions]);
 
-  // Set individual status
+  // Select a slot from weekly routine
+  const handleSelectRoutineSlot = (slot: any) => {
+    setSelectedSlotId(`${slot.dayOfWeek}-${slot.startTime}`);
+    setStartTime(slot.startTime);
+    setEndTime(slot.endTime);
+    setSessionType('regular');
+    setCustomTitle('');
+  };
+
+  // Switch to Extra Class mode
+  const handleActivateExtraClass = (type: 'extra' | 'makeup') => {
+    setSelectedSlotId(null);
+    setSessionType(type);
+    setCustomTitle(type === 'extra' ? 'Extra Revision Marathon' : 'Scheduled Makeup Class');
+  };
+
+  // Set individual attendance status
   const handleSetStatus = (studentId: string, status: AttendanceStatus) => {
     setAttendanceRecords((prev) => ({
       ...prev,
@@ -164,6 +272,30 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
         ...prev[studentId],
         studentId,
         attendance: status,
+      },
+    }));
+  };
+
+  // Update student quiz score
+  const handleSetQuizScore = (studentId: string, score: number) => {
+    setAttendanceRecords((prev) => ({
+      ...prev,
+      [studentId]: {
+        ...prev[studentId],
+        studentId,
+        inClassQuizScore: Math.min(examMaxMarks, Math.max(0, score)),
+      },
+    }));
+  };
+
+  // Update student remark
+  const handleSetStudentRemark = (studentId: string, remarks: string) => {
+    setAttendanceRecords((prev) => ({
+      ...prev,
+      [studentId]: {
+        ...prev[studentId],
+        studentId,
+        remarks,
       },
     }));
   };
@@ -187,23 +319,138 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
 
     const sessionId = `sess-${activeBatch.id}-${sessionDate}`;
 
+    // Calculate in-class quiz metrics if conducted
+    let inClassExamData: InClassExamDetail | undefined = undefined;
+    if (hasInClassExam) {
+      let totalScores = 0;
+      let evaluatedCount = 0;
+      let highest = 0;
+      Object.values(attendanceRecords).forEach((rec) => {
+        if (rec.attendance === 'present' || rec.attendance === 'late') {
+          const score = rec.inClassQuizScore || 0;
+          totalScores += score;
+          evaluatedCount++;
+          if (score > highest) highest = score;
+        }
+      });
+      inClassExamData = {
+        hasExam: true,
+        examId: `exam-quiz-${sessionId}`,
+        title: examTitle.trim() || 'In-Class Pop Quiz',
+        maxMarks: examMaxMarks,
+        linkedTopicTitles: selectedTopics,
+        classAverage: evaluatedCount > 0 ? Math.round((totalScores / evaluatedCount) * 10) / 10 : 0,
+        highestScore: highest,
+      };
+    }
+
+    // Assigned homework detail
+    let assignedHwData: AssignedHomeworkDetail | undefined = undefined;
+    if (hasAssignedHomework) {
+      assignedHwData = {
+        hasHomework: true,
+        homeworkId: `hw-${sessionId}`,
+        title: homeworkTitle.trim() || `Homework for ${sessionDate}`,
+        dueDate: homeworkDueDate,
+        description: homeworkDescription.trim(),
+        relatedTopics: selectedTopics,
+      };
+    }
+
     const newSession: ClassSession = {
       id: sessionId,
       batchId: activeBatch.id,
       date: sessionDate,
+      startTime,
+      endTime,
+      routineSlotId: selectedSlotId || undefined,
       sessionType,
+      customTitle: customTitle.trim() || undefined,
       generalLessonSummary: lessonSummary.trim(),
       topicsTaught: selectedTopics,
+      topicProgressStatus: targetTopicStatus,
       records: attendanceRecords,
+      inClassExam: inClassExamData,
+      assignedHomework: assignedHwData,
+      nextClassLessonPlan: nextClassLessonPlan.trim() || undefined,
       createdAt: Date.now(),
     };
 
     await saveClassSession(newSession, targetTopicStatus);
     setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    setTimeout(() => setSaveSuccess(false), 3500);
   };
 
-  // WhatsApp Alert for Absent/Late
+  // Generate WhatsApp Class Summary for group broadcast
+  const handleCopyWhatsAppSummary = () => {
+    const presentCount = Object.values(attendanceRecords).filter(
+      (r) => r.attendance === 'present'
+    ).length;
+    const absentCount = Object.values(attendanceRecords).filter(
+      (r) => r.attendance === 'absent'
+    ).length;
+    const lateCount = Object.values(attendanceRecords).filter(
+      (r) => r.attendance === 'late'
+    ).length;
+
+    let text = `📚 *NPB Academic Session Summary — ${activeBatch?.name}*\n`;
+    text += `📅 *Date:* ${sessionDate} (${sessionType.toUpperCase()} CLASS)\n`;
+    text += `⏱️ *Time Slot:* ${startTime} – ${endTime}\n`;
+    if (customTitle) text += `🎯 *Focus:* ${customTitle}\n`;
+    text += `\n📖 *Topics Covered Today:*\n`;
+    if (selectedTopics.length > 0) {
+      selectedTopics.forEach((t) => {
+        text += `• ${t}\n`;
+      });
+    } else {
+      text += `• ${lessonSummary || 'General revision exercises'}\n`;
+    }
+
+    if (hasInClassExam) {
+      text += `\n📝 *In-Class Quiz Held:*\n`;
+      text += `• Quiz: ${examTitle} (Marks: /${examMaxMarks})\n`;
+    }
+
+    if (hasAssignedHomework) {
+      text += `\n📚 *Homework Assigned:*\n`;
+      text += `• ${homeworkTitle}\n`;
+      text += `• Due Date: ${homeworkDueDate}\n`;
+    }
+
+    text += `\n👥 *Attendance Breakdown:*\n`;
+    text += `✅ Present: ${presentCount} | ❌ Absent: ${absentCount} | ⏳ Late: ${lateCount}\n`;
+
+    if (nextClassLessonPlan) {
+      text += `\n📌 *Next Class Focus:* ${nextClassLessonPlan}\n`;
+    }
+
+    text += `\n_Recorded systematically via NPB Academic System._`;
+
+    navigator.clipboard.writeText(text);
+    setCopiedSummary(true);
+    setTimeout(() => setCopiedSummary(false), 3000);
+  };
+
+  // Broadcast WhatsApp to all absent students
+  const handleBroadcastAbsentWhatsApp = () => {
+    const absentStudents = enrolledStudents.filter(
+      (stu) => attendanceRecords[stu.id]?.attendance === 'absent'
+    );
+    if (absentStudents.length === 0) return;
+
+    // Open first absent student's WhatsApp link
+    const firstStu = absentStudents[0];
+    const msg = WhatsAppTemplates.attendanceAlert(
+      firstStu.name,
+      'absent',
+      sessionDate,
+      activeBatch.name
+    );
+    const link = createWhatsAppLink(firstStu.guardianPhone, msg);
+    window.open(link, '_blank');
+  };
+
+  // WhatsApp Alert for single student
   const handleSendAttendanceWhatsApp = (stu: any, status: 'absent' | 'late') => {
     const msg = WhatsAppTemplates.attendanceAlert(
       stu.name,
@@ -220,9 +467,24 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
     setSelectedBatchId(sess.batchId);
     setSessionDate(sess.date);
     setSessionType(sess.sessionType);
+    setCustomTitle(sess.customTitle || '');
+    setStartTime(sess.startTime || '18:30');
+    setEndTime(sess.endTime || '19:30');
     setLessonSummary(sess.generalLessonSummary || '');
     setSelectedTopics(sess.topicsTaught || []);
     setAttendanceRecords(sess.records || {});
+    setNextClassLessonPlan(sess.nextClassLessonPlan || '');
+    if (sess.inClassExam?.hasExam) {
+      setHasInClassExam(true);
+      setExamTitle(sess.inClassExam.title);
+      setExamMaxMarks(sess.inClassExam.maxMarks);
+    }
+    if (sess.assignedHomework?.hasHomework) {
+      setHasAssignedHomework(true);
+      setHomeworkTitle(sess.assignedHomework.title);
+      setHomeworkDueDate(sess.assignedHomework.dueDate);
+      setHomeworkDescription(sess.assignedHomework.description || '');
+    }
     handleSwitchTab('conduct');
   };
 
@@ -242,7 +504,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
             }`}
           >
             <Radio className={`w-4 h-4 ${activeTab === 'conduct' ? 'animate-pulse' : ''}`} />
-            <span>Live Class Mode</span>
+            <span>Live Class & Session Recording</span>
           </button>
 
           {/* Class Records & Archive Tab Button */}
@@ -271,7 +533,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
 
         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 px-2 sm:px-0">
           <Clock className="w-3.5 h-3.5" />
-          <span>Quick 30s attendance & automated syllabus sync</span>
+          <span>Select from schedule or create extra sessions</span>
         </div>
       </div>
 
@@ -285,25 +547,41 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
         /* LIVE CLASS SESSION FORM */
         <div className="space-y-5">
           {/* Hero Control Header */}
-          <div className="bg-white dark:bg-dark-surface p-5 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs">
+          <div className="bg-white dark:bg-dark-surface p-5 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-weird-green text-slate-950 animate-pulse">
-                    <Radio className="w-3.5 h-3.5" />
-                    Live In-Class Session
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black ${
+                    sessionType === 'extra'
+                      ? 'bg-bright-lilac text-white'
+                      : sessionType === 'makeup'
+                      ? 'bg-spiro-disco-ball text-white'
+                      : 'bg-weird-green text-slate-950 animate-pulse'
+                  }`}>
+                    {sessionType === 'extra' ? <Zap className="w-3.5 h-3.5" /> : <Radio className="w-3.5 h-3.5" />}
+                    <span>{sessionType === 'extra' ? 'Extra Revision Class' : sessionType === 'makeup' ? 'Scheduled Makeup' : 'Routine Class Session'}</span>
                   </span>
                   <span className="text-xs text-slate-400">
-                    Recording for: <strong className="text-slate-800 dark:text-white">{activeBatch?.name || 'Selected Batch'}</strong>
+                    Batch: <strong className="text-slate-800 dark:text-white">{activeBatch?.name || 'Selected'}</strong>
                   </span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white mt-1">
-                  Class Session & Attendance Manager
+                  Academic Session & Detailed Record System
                 </h1>
               </div>
 
-              {/* Quick Mark All Present + Save Session */}
-              <div className="flex items-center gap-2">
+              {/* Action Buttons: Save Session + Copy WhatsApp Summary */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleCopyWhatsAppSummary}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700"
+                  title="Copy formatted summary to paste into batch WhatsApp group"
+                >
+                  {copiedSummary ? <Check className="w-4 h-4 text-weird-green" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedSummary ? 'Copied Summary!' : 'Copy WA Summary'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleMarkAllPresent}
@@ -327,15 +605,94 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      <span>Save Session</span>
+                      <span>Save Session Record</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Batch, Date & Session Type Selectors */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-dark-border">
+            {/* SCHEDULE SELECTOR STRIP: Routine Slots vs Extra Class Creator */}
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-light-indigo dark:text-neon-blue" />
+                  <span>Weekly Schedule Routine for {activeBatch?.name} (Tap to Select Slot):</span>
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleActivateExtraClass('extra')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                      sessionType === 'extra'
+                        ? 'bg-bright-lilac text-white shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <PlusCircle className="w-3 h-3" />
+                    <span>+ Add Extra Class</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleActivateExtraClass('makeup')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                      sessionType === 'makeup'
+                        ? 'bg-spiro-disco-ball text-white shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>+ Makeup Class</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Routine Slots List */}
+              <div className="flex flex-wrap items-center gap-2">
+                {activeBatch?.weeklyRoutine && activeBatch.weeklyRoutine.length > 0 ? (
+                  activeBatch.weeklyRoutine.map((slot, idx) => {
+                    const isToday = slot.dayOfWeek === todayDay;
+                    const isSelected =
+                      selectedSlotId === `${slot.dayOfWeek}-${slot.startTime}` &&
+                      sessionType === 'regular';
+
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleSelectRoutineSlot(slot)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                          isSelected
+                            ? 'bg-light-indigo text-white shadow-md shadow-light-indigo/30 ring-2 ring-light-indigo'
+                            : isToday
+                            ? 'bg-weird-green/15 text-emerald-950 dark:text-weird-green border border-weird-green/40 hover:bg-weird-green/25'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>
+                          {WEEKDAY_NAMES[slot.dayOfWeek]} {slot.startTime} – {slot.endTime}
+                        </span>
+                        {isToday && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-weird-green text-slate-950 font-black">
+                            Today
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <span className="text-xs text-slate-400 italic">
+                    No weekly routine slots configured in batch settings. Use Extra Class or configure in Batches tab.
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Batch, Date, Time & Session Title Inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2">
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                   Select Batch
@@ -367,17 +724,42 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Session Type
+                  Class Time Slot
                 </label>
-                <select
-                  value={sessionType}
-                  onChange={(e) => setSessionType(e.target.value as any)}
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="w-full px-2 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                  <span className="text-xs text-slate-400 font-bold">–</span>
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    className="w-full px-2 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Session Title / Reason
+                </label>
+                <input
+                  type="text"
+                  value={customTitle}
+                  onChange={(e) => setCustomTitle(e.target.value)}
+                  placeholder={
+                    sessionType === 'extra'
+                      ? 'e.g. Board Questions Solves Special'
+                      : sessionType === 'makeup'
+                      ? 'e.g. Narration Makeup Class'
+                      : 'Regular Routine Class'
+                  }
                   className="w-full px-3 py-2 rounded-xl text-xs sm:text-sm font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-light-indigo"
-                >
-                  <option value="regular">Regular Routine Class</option>
-                  <option value="extra">Extra Revision Class</option>
-                  <option value="makeup">Scheduled Makeup Class</option>
-                </select>
+                />
               </div>
             </div>
           </div>
@@ -419,7 +801,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                 rows={2}
                 value={lessonSummary}
                 onChange={(e) => setLessonSummary(e.target.value)}
-                placeholder="e.g. Covered Modifiers Rules 1–7 with board question examples. Assigned Practice Sheet 04 for homework."
+                placeholder="e.g. Covered Modifiers Rules 1–7 with board question examples. Solved Dhaka Board 2024 exercises."
                 className="w-full px-3.5 py-2.5 rounded-xl text-xs sm:text-sm border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-white focus:ring-2 focus:ring-light-indigo focus:bg-white dark:focus:bg-slate-800 transition-all placeholder:text-slate-400"
               />
             </div>
@@ -435,55 +817,197 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                 enrolledStudentsCount={enrolledStudents.length}
               />
             </div>
+          </div>
 
-            {/* Sync Automation Alert Banner */}
-            <div className="p-3 rounded-xl bg-light-indigo/5 dark:bg-light-indigo/10 border border-light-indigo/20 text-xs text-slate-600 dark:text-slate-300 flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-radiant-yellow flex-shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <span className="font-bold text-slate-900 dark:text-white">Automated Syllabus & Makeup Pipeline:</span>
-                <p>
-                  When you save, <strong>Present/Late</strong> students have these topics updated to{' '}
-                  <span className="font-bold text-emerald-600 dark:text-wintergreen">{targetTopicStatus}</span>.
-                  Any <strong>Absent</strong> student automatically has these topics tagged as{' '}
-                  <span className="font-bold text-light-red">Missed</span> in their profile and queued in the{' '}
-                  <span className="font-bold text-light-indigo dark:text-spiro-disco-ball">Makeup Planner</span>.
-                </p>
+          {/* IN-CLASS EXAM / POP QUIZ INTEGRATION CARD */}
+          <div className="bg-white dark:bg-dark-surface p-5 sm:p-6 rounded-2xl border border-radiant-yellow/30 dark:border-radiant-yellow/20 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-radiant-yellow/15 text-amber-800 dark:text-radiant-yellow">
+                  <GraduationCap className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
+                    In-Class Exam / Pop Quiz Detail
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Record quick test marks taken during this class. Auto-syncs to Exam Tracker and student mastery analytics.
+                  </p>
+                </div>
               </div>
+
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hasInClassExam}
+                  onChange={(e) => setHasInClassExam(e.target.checked)}
+                  className="rounded text-light-indigo focus:ring-light-indigo w-4 h-4"
+                />
+                <span className="text-xs font-black text-slate-900 dark:text-white">
+                  {hasInClassExam ? 'Quiz Active' : 'Enable Quiz'}
+                </span>
+              </label>
+            </div>
+
+            {hasInClassExam && (
+              <div className="p-4 rounded-xl bg-amber-500/5 dark:bg-amber-500/10 border border-radiant-yellow/30 grid grid-cols-1 sm:grid-cols-2 gap-3 animate-in fade-in-50">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">
+                    Quiz / Exam Title
+                  </label>
+                  <input
+                    type="text"
+                    value={examTitle}
+                    onChange={(e) => setExamTitle(e.target.value)}
+                    placeholder="e.g. Modifiers 10-Min Pop Quiz"
+                    className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">
+                    Total Marks
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={examMaxMarks}
+                    onChange={(e) => setExamMaxMarks(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 pt-1">
+                  <Award className="w-4 h-4 text-radiant-yellow" />
+                  <span>
+                    Individual student score fields will appear in the attendance roster below (out of {examMaxMarks}).
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ASSIGNED HOMEWORK & NEXT CLASS PLAN INTEGRATION */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Homework Assignment */}
+            <div className="bg-white dark:bg-dark-surface p-5 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BookOpenCheck className="w-4 h-4 text-radiant-yellow" />
+                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                    Homework Assigned
+                  </h3>
+                </div>
+                <label className="inline-flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    checked={hasAssignedHomework}
+                    onChange={(e) => setHasAssignedHomework(e.target.checked)}
+                    className="rounded text-light-indigo focus:ring-light-indigo w-3.5 h-3.5"
+                  />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Assign HW</span>
+                </label>
+              </div>
+
+              {hasAssignedHomework ? (
+                <div className="space-y-2 pt-1 animate-in fade-in-50">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      Homework Task Title
+                    </label>
+                    <input
+                      type="text"
+                      value={homeworkTitle}
+                      onChange={(e) => setHomeworkTitle(e.target.value)}
+                      placeholder="e.g. Modifiers Sheet 04 Exercises 1–25"
+                      className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Due Date
+                      </label>
+                      <input
+                        type="date"
+                        value={homeworkDueDate}
+                        onChange={(e) => setHomeworkDueDate(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        Instructions (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={homeworkDescription}
+                        onChange={(e) => setHomeworkDescription(e.target.value)}
+                        placeholder="e.g. Solve in homework copy"
+                        className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">
+                  No homework tagged to this session. Check 'Assign HW' to log homework due next class.
+                </p>
+              )}
+            </div>
+
+            {/* Next Class Lesson Plan */}
+            <div className="bg-white dark:bg-dark-surface p-5 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-3">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-spiro-disco-ball" />
+                <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                  Next Class Preparation Plan & Memo
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Reminder note for what to teach and check in the upcoming routine class.
+              </p>
+              <textarea
+                rows={3}
+                value={nextClassLessonPlan}
+                onChange={(e) => setNextClassLessonPlan(e.target.value)}
+                placeholder="e.g. Check Modifiers HW, begin Narration rules 1–5, distribute lecture sheet 05."
+                className="w-full px-3 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-light-indigo"
+              />
             </div>
           </div>
 
-          {/* Student Attendance & Handouts Section */}
+          {/* Student Attendance & Detailed Recording Roster */}
           <div className="bg-white dark:bg-dark-surface rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs overflow-hidden">
             <div className="p-5 border-b border-slate-100 dark:border-dark-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
-                    Student Attendance & Lecture Sheet Handouts
+                    Student Attendance Roster ({enrolledStudents.length} Students)
                   </h3>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                    {enrolledStudents.length} Enrolled
-                  </span>
+                  {hasInClassExam && (
+                    <span className="text-xs px-2.5 py-0.5 rounded-full font-black bg-radiant-yellow/20 text-amber-900 dark:text-radiant-yellow">
+                      Quiz Active (/{examMaxMarks} marks)
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Tap P (Present), A (Absent), L (Late), E (Excused). Tick lecture sheets to mark as handed over.
+                  Tap P (Present), A (Absent), L (Late), E (Excused). Record quiz score and teacher observations.
                 </p>
               </div>
 
-              {enrolledStudents.length > 0 && (
-                <div className="flex items-center gap-3 text-xs font-semibold text-slate-500">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-weird-green" /> P = Present
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-light-red" /> A = Absent
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-radiant-yellow" /> L = Late
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-spiro-disco-ball" /> E = Excused
-                  </span>
-                </div>
+              {/* Absent broadcast button */}
+              {enrolledStudents.some((s) => attendanceRecords[s.id]?.attendance === 'absent') && (
+                <button
+                  type="button"
+                  onClick={handleBroadcastAbsentWhatsApp}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-light-red/10 text-red-700 dark:text-light-red hover:bg-light-red/20 transition-all border border-light-red/20"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Notify Absentees on WhatsApp</span>
+                </button>
               )}
             </div>
 
@@ -510,19 +1034,6 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                     <UserPlus className="w-3.5 h-3.5" />
                     <span>Go to Student Directory</span>
                   </button>
-                  {batches.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const otherBatch = batches.find((b) => b.id !== activeBatch?.id);
-                        if (otherBatch) setSelectedBatchId(otherBatch.id);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
-                    >
-                      <span>Switch to Another Batch</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
               </div>
             ) : (
@@ -533,6 +1044,8 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                     studentId: stu.id,
                     attendance: 'present',
                     topicsCoveredForStudent: [],
+                    inClassQuizScore: 0,
+                    remarks: '',
                   };
                   const currentStatus = record.attendance;
 
@@ -557,15 +1070,15 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                           : ''
                       }`}
                     >
-                      {/* Left: Roll, Name, School & Pending Sheet Alert */}
-                      <div className="flex items-center gap-3">
+                      {/* Left: Roll, Name, School & In-Class Score Input */}
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
                         <span className="font-extrabold text-xs px-2.5 py-1.5 rounded-lg bg-radiant-yellow/20 text-amber-900 dark:text-radiant-yellow min-w-[50px] text-center">
                           {stu.publicRollNo}
                         </span>
 
-                        <div>
+                        <div className="space-y-1 flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm text-slate-900 dark:text-white">
+                            <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
                               {stu.name}
                             </span>
                             {stu.streakCount > 0 && (
@@ -581,9 +1094,20 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                             {stu.section && <span>• Sec {stu.section}</span>}
                           </div>
 
-                          {/* Glowing Hammam Blue Pending Sheet Alert Banner */}
+                          {/* Student remarks / notes input */}
+                          <div className="pt-1 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={record.remarks || ''}
+                              onChange={(e) => handleSetStudentRemark(stu.id, e.target.value)}
+                              placeholder="Observation / note (e.g. good mastery, needs revision)"
+                              className="px-2 py-1 rounded-lg text-[11px] border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 w-full max-w-xs focus:ring-1 focus:ring-light-indigo"
+                            />
+                          </div>
+
+                          {/* Pending Sheet Handover Alert Banner */}
                           {unreceivedSheets.length > 0 && (
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
                               {unreceivedSheets.map((sh) => (
                                 <label
                                   key={sh.id}
@@ -603,9 +1127,26 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                         </div>
                       </div>
 
-                      {/* Right: Attendance Pills & WhatsApp Button */}
-                      <div className="flex items-center gap-2 self-end sm:self-auto">
-                        {/* Absent / Late WhatsApp dispatch button */}
+                      {/* Right: Quiz Score & Attendance Status Buttons */}
+                      <div className="flex items-center gap-3 self-end sm:self-auto flex-wrap">
+                        {/* In-Class Quiz Score Field */}
+                        {hasInClassExam && (
+                          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase">Score:</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={examMaxMarks}
+                              value={record.inClassQuizScore ?? 0}
+                              onChange={(e) => handleSetQuizScore(stu.id, Number(e.target.value))}
+                              disabled={currentStatus === 'absent'}
+                              className="w-12 px-1.5 py-0.5 rounded text-xs font-black text-center bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 disabled:opacity-40"
+                            />
+                            <span className="text-[10px] font-bold text-slate-400">/{examMaxMarks}</span>
+                          </div>
+                        )}
+
+                        {/* Absent WhatsApp Dispatch Button */}
                         {(currentStatus === 'absent' || currentStatus === 'late') && (
                           <button
                             type="button"
@@ -617,6 +1158,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                           </button>
                         )}
 
+                        {/* P / A / L / E Pills */}
                         <div className="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                           {/* Present Pill */}
                           <button

@@ -554,6 +554,121 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return stu;
       })
     );
+
+    // Automated In-Class Exam / Quiz Sync
+    if (session.inClassExam?.hasExam) {
+      const examId = session.inClassExam.examId || `exam-quiz-${session.id}`;
+      const maxMarks = session.inClassExam.maxMarks || 10;
+      const examResults: Record<string, any> = {};
+
+      Object.entries(session.records).forEach(([stuId, rec]) => {
+        const isAbsent = rec.attendance === 'absent' || rec.attendance === 'excused';
+        const score = rec.inClassQuizScore ?? 0;
+        examResults[stuId] = {
+          studentId: stuId,
+          isAbsent,
+          sectionMarks: { 'sec-quiz': score },
+          totalObtained: isAbsent ? 0 : score,
+          percentage: isAbsent ? 0 : Math.round((score / maxMarks) * 100),
+          remarks: rec.remarks,
+        };
+      });
+
+      const generatedExam: Exam = {
+        id: examId,
+        batchId: session.batchId,
+        title: session.inClassExam.title || `In-Class Quiz: ${session.date}`,
+        examDate: session.date,
+        scopeType: 'batch_wide',
+        status: 'completed',
+        sections: [
+          {
+            id: 'sec-quiz',
+            name: session.inClassExam.title || 'In-Class Quiz',
+            category: 'Grammar',
+            linkedTopicTitles: session.topicsTaught || [],
+            maxMarks,
+          },
+        ],
+        totalMaxMarks: maxMarks,
+        passMarks: Math.round(maxMarks * 0.4),
+        absentPolicy: 'exclude_avg_but_zero_leaderboard',
+        results: examResults,
+        createdAt: Date.now(),
+      };
+
+      setExams((prev) => {
+        const idx = prev.findIndex((e) => e.id === examId);
+        return idx >= 0 ? prev.map((e) => (e.id === examId ? generatedExam : e)) : [generatedExam, ...prev];
+      });
+
+      if (isFirebaseConfigured && db) {
+        try {
+          await setDoc(doc(db, 'exams', examId), generatedExam);
+        } catch (err: any) {
+          console.warn('[NPB Firestore quiz sync]:', err.message);
+        }
+      }
+    }
+
+    // Automated Assigned Homework Sync
+    if (session.assignedHomework?.hasHomework) {
+      const hwId = session.assignedHomework.homeworkId || `hw-${session.id}`;
+      const generatedHw: Homework = {
+        id: hwId,
+        batchId: session.batchId,
+        title: session.assignedHomework.title || `Homework from ${session.date}`,
+        assignedDate: session.date,
+        dueDate: session.assignedHomework.dueDate,
+        description: session.assignedHomework.description,
+        relatedTopics: session.topicsTaught || [],
+        targetType: 'whole_batch',
+        gradingMode: 'status_only',
+        submissions: {},
+        createdAt: Date.now(),
+      };
+
+      setHomeworks((prev) => {
+        const idx = prev.findIndex((h) => h.id === hwId);
+        return idx >= 0 ? prev.map((h) => (h.id === hwId ? generatedHw : h)) : [generatedHw, ...prev];
+      });
+
+      if (isFirebaseConfigured && db) {
+        try {
+          await setDoc(doc(db, 'homeworks', hwId), generatedHw);
+        } catch (err: any) {
+          console.warn('[NPB Firestore homework sync]:', err.message);
+        }
+      }
+    }
+
+    // Automated Lecture Sheet Handout Sync
+    if (session.distributedSheetIds && session.distributedSheetIds.length > 0) {
+      const presentStudentIds = Object.entries(session.records)
+        .filter(([_, rec]) => rec.attendance === 'present' || rec.attendance === 'late')
+        .map(([stuId]) => stuId);
+
+      if (presentStudentIds.length > 0) {
+        setSheets((prev) =>
+          prev.map((sh) => {
+            if (session.distributedSheetIds?.includes(sh.id)) {
+              const currentRec = sh.receivedByStudentIds || [];
+              const combined = Array.from(new Set([...currentRec, ...presentStudentIds]));
+              const updatedSheet = { ...sh, receivedByStudentIds: combined };
+              if (isFirebaseConfigured && db) {
+                try {
+                  setDoc(doc(db, 'lectureSheets', sh.id), updatedSheet);
+                } catch (err: any) {
+                  console.warn('[NPB Firestore sheet sync]:', err.message);
+                }
+              }
+              return updatedSheet;
+            }
+            return sh;
+          })
+        );
+      }
+    }
   };
 
   const deleteClassSession = async (sessionId: string) => {

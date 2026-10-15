@@ -19,6 +19,13 @@ import {
   Sparkles,
   X,
   Filter,
+  Copy,
+  Check,
+  BookOpenCheck,
+  GraduationCap,
+  Zap,
+  MessageSquare,
+  Award,
 } from 'lucide-react';
 import { createWhatsAppLink, WhatsAppTemplates } from '../../lib/whatsappTemplates';
 
@@ -38,6 +45,7 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
   const [filterType, setFilterType] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [inspectingSession, setInspectingSession] = useState<ClassSession | null>(null);
+  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
 
   // Filter sessions
   const filteredSessions = sessions
@@ -49,11 +57,13 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
         const batchName = batches.find((b) => b.id === sess.batchId)?.name.toLowerCase() || '';
         const topicsStr = (sess.topicsTaught || []).join(' ').toLowerCase();
         const summaryStr = (sess.generalLessonSummary || '').toLowerCase();
+        const customTitleStr = (sess.customTitle || '').toLowerCase();
         const dateStr = sess.date.toLowerCase();
         return (
           batchName.includes(q) ||
           topicsStr.includes(q) ||
           summaryStr.includes(q) ||
+          customTitleStr.includes(q) ||
           dateStr.includes(q)
         );
       }
@@ -84,7 +94,7 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
     const batch = batches.find((b) => b.id === sess.batchId);
     const ok = await confirm({
       title: 'Delete Class Session Record',
-      message: `Delete class record for ${batch?.name || 'Batch'} on ${sess.date}? This will delete attendance and lesson history for this session.`,
+      message: `Delete class record for ${batch?.name || 'Batch'} on ${sess.date}? This will delete attendance, quiz, and lesson history for this session.`,
       confirmText: 'Yes, Delete Record',
       cancelText: 'Cancel',
       variant: 'danger',
@@ -101,6 +111,58 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
         setInspectingSession(null);
       }
     }
+  };
+
+  const handleCopyWhatsAppSummary = (sess: ClassSession) => {
+    const batch = batches.find((b) => b.id === sess.batchId);
+    const recordsList = Object.values(sess.records || {});
+    const presentCount = recordsList.filter((r) => r.attendance === 'present').length;
+    const absentCount = recordsList.filter((r) => r.attendance === 'absent').length;
+    const lateCount = recordsList.filter((r) => r.attendance === 'late').length;
+
+    let text = `📚 *NPB Academic Session Summary — ${batch?.name || 'Batch'}*\n`;
+    text += `📅 *Date:* ${sess.date} (${sess.sessionType.toUpperCase()} CLASS)\n`;
+    if (sess.startTime && sess.endTime) {
+      text += `⏱️ *Time Slot:* ${sess.startTime} – ${sess.endTime}\n`;
+    }
+    if (sess.customTitle) {
+      text += `🎯 *Focus:* ${sess.customTitle}\n`;
+    }
+    text += `\n📖 *Topics Covered:*\n`;
+    if (sess.topicsTaught && sess.topicsTaught.length > 0) {
+      sess.topicsTaught.forEach((t) => {
+        text += `• ${t}\n`;
+      });
+    } else {
+      text += `• ${sess.generalLessonSummary || 'General class exercise'}\n`;
+    }
+
+    if (sess.inClassExam?.hasExam) {
+      text += `\n📝 *In-Class Quiz Held:*\n`;
+      text += `• Quiz: ${sess.inClassExam.title} (Marks: /${sess.inClassExam.maxMarks})\n`;
+      if (sess.inClassExam.classAverage) {
+        text += `• Class Average: ${sess.inClassExam.classAverage}/${sess.inClassExam.maxMarks}\n`;
+      }
+    }
+
+    if (sess.assignedHomework?.hasHomework) {
+      text += `\n📚 *Homework Assigned:*\n`;
+      text += `• ${sess.assignedHomework.title}\n`;
+      text += `• Due Date: ${sess.assignedHomework.dueDate}\n`;
+    }
+
+    text += `\n👥 *Attendance Breakdown:*\n`;
+    text += `✅ Present: ${presentCount} | ❌ Absent: ${absentCount} | ⏳ Late: ${lateCount}\n`;
+
+    if (sess.nextClassLessonPlan) {
+      text += `\n📌 *Next Class Focus:* ${sess.nextClassLessonPlan}\n`;
+    }
+
+    text += `\n_Recorded systematically via NPB Academic System._`;
+
+    navigator.clipboard.writeText(text);
+    setCopiedSessionId(sess.id);
+    setTimeout(() => setCopiedSessionId(null), 2500);
   };
 
   return (
@@ -144,88 +206,76 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
               {overallAttendancePct}%
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-bright-lilac/15 text-bright-lilac flex items-center justify-center font-bold">
+          <div className="w-10 h-10 rounded-xl bg-radiant-yellow/15 text-amber-800 dark:text-radiant-yellow flex items-center justify-center font-bold">
             <Users className="w-5 h-5" />
           </div>
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
+      {/* Control Filter Bar */}
       <div className="bg-white dark:bg-dark-surface p-4 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-3">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          {/* Search Box */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex-1 relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search past sessions by topic, lesson note, or date (YYYY-MM-DD)..."
-              className="w-full pl-10 pr-3 py-2 rounded-xl text-xs sm:text-sm border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-light-indigo"
+              placeholder="Search by topic, lesson note, title, or date (YYYY-MM-DD)..."
+              className="w-full pl-9 pr-4 py-2 rounded-xl text-xs sm:text-sm border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-light-indigo"
             />
           </div>
 
-          {/* Batch Filter */}
-          <div className="sm:w-48">
-            <select
-              value={filterBatchId}
-              onChange={(e) => setFilterBatchId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200"
-            >
-              <option value="all">All Academic Batches</option>
-              {batches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={filterBatchId}
+                onChange={(e) => setFilterBatchId(e.target.value)}
+                className="px-2.5 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+              >
+                <option value="all">All Batches</option>
+                {batches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          {/* Session Type Filter */}
-          <div className="sm:w-36">
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+              className="px-2.5 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
             >
-              <option value="all">All Class Types</option>
+              <option value="all">All Types</option>
               <option value="regular">Regular Routine</option>
               <option value="extra">Extra Class</option>
               <option value="makeup">Makeup Class</option>
             </select>
           </div>
-
-          {/* Conduct Class Action */}
-          <button
-            type="button"
-            onClick={onConductNewClass}
-            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black bg-weird-green hover:bg-wintergreen text-slate-950 shadow-md shadow-weird-green/20 transition-transform active:scale-95"
-          >
-            <Radio className="w-3.5 h-3.5" />
-            <span>+ Conduct Class</span>
-          </button>
         </div>
       </div>
 
-      {/* Sessions Chronological List */}
+      {/* Class Sessions List */}
       {filteredSessions.length === 0 ? (
-        <div className="bg-white dark:bg-dark-surface p-12 text-center rounded-2xl border border-slate-200/80 dark:border-dark-border">
-          <Calendar className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
-            No class records found
-          </h3>
-          <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            {searchQuery || filterBatchId !== 'all' || filterType !== 'all'
-              ? 'No sessions match your search or filter criteria. Try clearing filters.'
-              : 'You have not saved any class sessions yet. Switch to Live In-Class Mode to conduct and record your first class!'}
+        <div className="bg-white dark:bg-dark-surface rounded-2xl border border-slate-200/80 dark:border-dark-border p-12 text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-light-indigo/10 text-light-indigo flex items-center justify-center mx-auto">
+            <FileSpreadsheet className="w-6 h-6" />
+          </div>
+          <h4 className="font-extrabold text-slate-900 dark:text-white text-base">
+            No Class Sessions Found
+          </h4>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            No class records match your search or filter criteria. Start a new session in Live Class Mode to begin logging history.
           </p>
           <button
             type="button"
             onClick={onConductNewClass}
-            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-weird-green text-slate-950 hover:bg-wintergreen"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-weird-green text-slate-950 hover:bg-wintergreen transition-all shadow-xs"
           >
             <Radio className="w-3.5 h-3.5" />
-            <span>Conduct First Class Session</span>
+            <span>Launch Live Class Now</span>
           </button>
         </div>
       ) : (
@@ -251,7 +301,7 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
             return (
               <div
                 key={sess.id}
-                className="bg-white dark:bg-dark-surface rounded-2xl border border-slate-200/90 dark:border-dark-border p-5 transition-all hover:border-light-indigo/40 shadow-xs space-y-4"
+                className="bg-white dark:bg-dark-surface rounded-2xl border border-slate-200/90 dark:border-dark-border p-5 transition-all hover:border-light-indigo/40 shadow-xs space-y-3.5"
               >
                 {/* Header row */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -261,16 +311,39 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
                       <span>{sess.date}</span>
                     </span>
 
+                    {sess.startTime && sess.endTime && (
+                      <span className="flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        <Clock className="w-3 h-3" />
+                        <span>{sess.startTime} – {sess.endTime}</span>
+                      </span>
+                    )}
+
                     <span className="font-extrabold text-xs text-slate-700 dark:text-slate-300">
                       {batch?.name || 'Batch'}
                     </span>
 
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${typeStyles}`}>
-                      {sess.sessionType} Class
+                      {sess.sessionType === 'extra' ? '⚡ Extra Class' : sess.sessionType === 'makeup' ? '🔄 Makeup' : 'Routine'}
                     </span>
+
+                    {sess.customTitle && (
+                      <span className="text-xs font-black text-light-indigo dark:text-neon-blue">
+                        • {sess.customTitle}
+                      </span>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                  <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyWhatsAppSummary(sess)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors"
+                      title="Copy WhatsApp class summary to clipboard"
+                    >
+                      {copiedSessionId === sess.id ? <Check className="w-3.5 h-3.5 text-weird-green" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedSessionId === sess.id ? 'Copied!' : 'Copy WA'}</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => setInspectingSession(sess)}
@@ -302,7 +375,7 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
 
                 {/* Topics Taught row */}
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
                     Topics Taught
                   </div>
                   {sess.topicsTaught && sess.topicsTaught.length > 0 ? (
@@ -321,11 +394,41 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
                   )}
                 </div>
 
+                {/* Badges for In-Class Quiz & Homework Assigned */}
+                {(sess.inClassExam?.hasExam || sess.assignedHomework?.hasHomework) && (
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    {sess.inClassExam?.hasExam && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-radiant-yellow/15 text-amber-900 dark:text-radiant-yellow border border-radiant-yellow/30">
+                        <GraduationCap className="w-3.5 h-3.5" />
+                        <span>Quiz: {sess.inClassExam.title} (Avg: {sess.inClassExam.classAverage || 0}/{sess.inClassExam.maxMarks})</span>
+                      </span>
+                    )}
+
+                    {sess.assignedHomework?.hasHomework && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-light-indigo/15 text-light-indigo dark:text-spiro-disco-ball border border-light-indigo/30">
+                        <BookOpenCheck className="w-3.5 h-3.5" />
+                        <span>HW Due: {sess.assignedHomework.dueDate} ({sess.assignedHomework.title})</span>
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Lesson Summary Notes */}
                 {sess.generalLessonSummary && (
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300">
-                    <span className="font-bold text-slate-700 dark:text-slate-200 mr-1.5">Lesson Notes:</span>
+                    <span className="font-bold text-slate-700 dark:text-slate-200 mr-1.5">Lesson Log:</span>
                     <span>{sess.generalLessonSummary}</span>
+                  </div>
+                )}
+
+                {/* Next Class Plan */}
+                {sess.nextClassLessonPlan && (
+                  <div className="p-2.5 rounded-xl bg-spiro-disco-ball/5 dark:bg-spiro-disco-ball/10 border border-spiro-disco-ball/20 text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-spiro-disco-ball flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-slate-900 dark:text-white">Next Class Focus: </span>
+                      <span>{sess.nextClassLessonPlan}</span>
+                    </div>
                   </div>
                 )}
 
@@ -368,14 +471,15 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
       {/* Roster & Attendance Details Modal */}
       {inspectingSession && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
-          <div className="bg-white dark:bg-dark-surface rounded-2xl w-full max-w-xl border border-slate-200 dark:border-dark-border shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+          <div className="bg-white dark:bg-dark-surface rounded-2xl w-full max-w-2xl border border-slate-200 dark:border-dark-border shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-dark-border">
               <div>
                 <h3 className="font-black text-base text-slate-900 dark:text-white">
-                  Student Attendance Roster
+                  Student Attendance & Performance Roster
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   {inspectingSession.date} • {batches.find((b) => b.id === inspectingSession.batchId)?.name}
+                  {inspectingSession.inClassExam?.hasExam && ` • Quiz: ${inspectingSession.inClassExam.title}`}
                 </p>
               </div>
               <button
@@ -405,7 +509,7 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
                   return (
                     <div
                       key={rec.studentId}
-                      className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 text-xs"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 text-xs"
                     >
                       <div className="flex items-center gap-3">
                         <span className="w-12 text-center px-1.5 py-0.5 rounded font-black bg-slate-200 dark:bg-slate-800 text-[10px]">
@@ -415,6 +519,11 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
                           <div className="font-extrabold text-slate-900 dark:text-white">
                             {stu?.name || 'Student'}
                           </div>
+                          {rec.remarks && (
+                            <div className="text-[11px] text-light-indigo dark:text-neon-blue font-semibold">
+                              Note: {rec.remarks}
+                            </div>
+                          )}
                           {stu?.guardianPhone && (
                             <div className="text-[10px] text-slate-400">
                               Guardian: {stu.guardianPhone}
@@ -423,7 +532,14 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3 self-end sm:self-auto">
+                        {/* Quiz Score Badge */}
+                        {inspectingSession.inClassExam?.hasExam && (
+                          <span className="px-2 py-1 rounded-lg text-xs font-black bg-radiant-yellow/15 text-amber-800 dark:text-radiant-yellow border border-radiant-yellow/20">
+                            Score: {rec.inClassQuizScore ?? 0}/{inspectingSession.inClassExam.maxMarks}
+                          </span>
+                        )}
+
                         <span className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider border ${statusColors}`}>
                           {rec.attendance}
                         </span>
@@ -455,11 +571,20 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
               )}
             </div>
 
-            <div className="p-4 border-t border-slate-100 dark:border-dark-border flex justify-end">
+            <div className="p-4 border-t border-slate-100 dark:border-dark-border flex justify-between items-center">
+              <button
+                type="button"
+                onClick={() => handleCopyWhatsAppSummary(inspectingSession)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copy Summary for WhatsApp</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setInspectingSession(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300"
+                className="px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300"
               >
                 Close
               </button>
