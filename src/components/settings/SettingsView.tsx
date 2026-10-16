@@ -78,7 +78,6 @@ export const SettingsView: React.FC = () => {
   const handlePushToFirestore = async () => {
     const isGoogleAdmin =
       currentUser &&
-      !currentUser.isDevAdmin &&
       currentUser.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase();
 
     if (!isGoogleAdmin) {
@@ -243,7 +242,7 @@ service cloud.firestore {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {(!currentUser || currentUser.isDevAdmin || currentUser.email?.toLowerCase() !== PRIMARY_ADMIN_EMAIL.toLowerCase()) && (
+            {(!currentUser || currentUser.email?.toLowerCase() !== PRIMARY_ADMIN_EMAIL.toLowerCase()) && (
               <button
                 type="button"
                 onClick={async () => {
@@ -307,16 +306,16 @@ service cloud.firestore {
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Firebase Auth State</span>
             <span className="font-bold text-xs text-slate-800 dark:text-white truncate block mt-0.5">
-              {currentUser?.email ? (currentUser.isDevAdmin ? 'Dev Local Session' : currentUser.email) : 'Not Signed In'}
+              {currentUser?.email ? currentUser.email : 'Not Signed In'}
             </span>
           </div>
 
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cloud Write Authorization</span>
-            <span className={`font-bold text-xs flex items-center gap-1 mt-0.5 ${currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase() && !currentUser.isDevAdmin ? 'text-emerald-600 dark:text-wintergreen' : 'text-radiant-yellow'}`}>
+            <span className={`font-bold text-xs flex items-center gap-1 mt-0.5 ${currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase() ? 'text-emerald-600 dark:text-wintergreen' : 'text-radiant-yellow'}`}>
               <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
               <span className="truncate">
-                {currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase() && !currentUser.isDevAdmin
+                {currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase()
                   ? 'Owner Authorized'
                   : 'Sign in to Google'}
               </span>
