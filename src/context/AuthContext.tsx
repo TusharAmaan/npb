@@ -69,7 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCurrentUser(null);
             localStorage.removeItem('npb_admin_session');
             setAccessDeniedMessage(
-              `Access Denied: "${user.email}" is not authorized. Only ${PRIMARY_ADMIN_EMAIL} has administrative access.`
+              `Access Denied: Account "${user.email}" is not authorized for administrative access.`
             );
             setIsLoading(false);
             return;
@@ -111,7 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await firebaseSignOut(auth);
           setCurrentUser(null);
           localStorage.removeItem('npb_admin_session');
-          const deniedMsg = `Access Denied: "${userEmail}" is not authorized. Only ${PRIMARY_ADMIN_EMAIL} has administrative access to this system.`;
+          const deniedMsg = `Access Denied: Account "${userEmail}" is not authorized for administrative access.`;
           setAccessDeniedMessage(deniedMsg);
           throw new Error(deniedMsg);
         }

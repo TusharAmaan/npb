@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Navigate, Link } from 'react-router-dom';
-import { useAuth, PRIMARY_ADMIN_EMAIL } from '../../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 import { NPBLogo } from '../common/NPBLogo';
 import { ShieldCheck, ShieldAlert, Lock, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
 
@@ -49,11 +49,8 @@ export const AdminLogin: React.FC = () => {
             Admin Authentication
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
-            Strict role-based access. Sign in exclusively with authorized Google account:
+            Sign in with your authorized Google account to manage batches, attendance, syllabus, and assessments.
           </p>
-          <div className="inline-block px-3 py-1 rounded-lg bg-light-indigo/10 text-light-indigo dark:text-neon-blue font-mono font-bold text-xs">
-            {PRIMARY_ADMIN_EMAIL}
-          </div>
         </div>
 
         {/* Access Denied Banner */}
@@ -63,7 +60,7 @@ export const AdminLogin: React.FC = () => {
               <ShieldAlert className="w-5 h-5" />
             </div>
             <h3 className="font-black text-sm text-red-700 dark:text-red-300">
-              Access Forbidden (403)
+              Admin Access Denied
             </h3>
             <p className="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
               {accessDeniedMessage}
@@ -121,7 +118,7 @@ export const AdminLogin: React.FC = () => {
           </button>
 
           <p className="text-[11px] text-center text-slate-400 dark:text-slate-500">
-            Clicking above will open Google OAuth. Select <strong>{PRIMARY_ADMIN_EMAIL}</strong> to continue.
+            Only authorized administrator accounts will be granted access.
           </p>
         </div>
 

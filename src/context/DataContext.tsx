@@ -440,7 +440,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let errMsg = err?.message || 'Permission denied or network failure.';
       if (err?.code === 'permission-denied') {
         errMsg =
-          'Permission Denied: Cloud Firestore rejected write request. Please verify you published firestore.rules and signed in with Google as tushar.aman05@gmail.com.';
+          'Permission Denied: Cloud Firestore rejected write request. Please verify you published firestore.rules and signed in with an authorized Google account.';
       }
       setLastCloudSyncStatus({ status: 'error', message: errMsg, timestamp: Date.now() });
       return { success: false, count: 0, error: errMsg };
