@@ -78,6 +78,7 @@ export const SettingsView: React.FC = () => {
   const handlePushToFirestore = async () => {
     const isGoogleAdmin =
       currentUser &&
+      !currentUser.isDevAdmin &&
       currentUser.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase();
 
     if (!isGoogleAdmin) {
@@ -242,7 +243,7 @@ service cloud.firestore {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {(!currentUser || currentUser.email?.toLowerCase() !== PRIMARY_ADMIN_EMAIL.toLowerCase()) && (
+            {(!currentUser || currentUser.isDevAdmin || currentUser.email?.toLowerCase() !== PRIMARY_ADMIN_EMAIL.toLowerCase()) && (
               <button
                 type="button"
                 onClick={async () => {
@@ -306,16 +307,16 @@ service cloud.firestore {
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Firebase Auth State</span>
             <span className="font-bold text-xs text-slate-800 dark:text-white truncate block mt-0.5">
-              {currentUser?.email ? currentUser.email : 'Not Signed In'}
+              {currentUser?.email ? (currentUser.isDevAdmin ? 'Dev Local Session' : currentUser.email) : 'Not Signed In'}
             </span>
           </div>
 
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cloud Write Authorization</span>
-            <span className={`font-bold text-xs flex items-center gap-1 mt-0.5 ${currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase() ? 'text-emerald-600 dark:text-wintergreen' : 'text-radiant-yellow'}`}>
+            <span className={`font-bold text-xs flex items-center gap-1 mt-0.5 ${currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase() && !currentUser.isDevAdmin ? 'text-emerald-600 dark:text-wintergreen' : 'text-radiant-yellow'}`}>
               <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
               <span className="truncate">
-                {currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase()
+                {currentUser?.email?.toLowerCase() === PRIMARY_ADMIN_EMAIL.toLowerCase() && !currentUser.isDevAdmin
                   ? 'Owner Authorized'
                   : 'Sign in to Google'}
               </span>
@@ -333,13 +334,12 @@ service cloud.firestore {
         {/* Sync Log Message Banner */}
         {lastCloudSyncStatus && (
           <div
-            className={`p-3 rounded-xl text-xs flex items-start gap-2 border ${
-              lastCloudSyncStatus.status === 'success'
+            className={`p-3 rounded-xl text-xs flex items-start gap-2 border ${lastCloudSyncStatus.status === 'success'
                 ? 'bg-weird-green/10 border-weird-green/30 text-emerald-900 dark:text-wintergreen'
                 : lastCloudSyncStatus.status === 'error'
-                ? 'bg-light-red/10 border-light-red/30 text-red-800 dark:text-light-red'
-                : 'bg-light-indigo/10 border-light-indigo/30 text-light-indigo dark:text-neon-blue'
-            }`}
+                  ? 'bg-light-red/10 border-light-red/30 text-red-800 dark:text-light-red'
+                  : 'bg-light-indigo/10 border-light-indigo/30 text-light-indigo dark:text-neon-blue'
+              }`}
           >
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <div className="space-y-0.5">
