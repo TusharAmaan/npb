@@ -17,6 +17,11 @@ import {
   StudentSyllabus,
   StudentSyllabusTopic,
   SyllabusScheme,
+  OnlineExam,
+  ExamSubmission,
+  PassageGapAnswer,
+  PassageSubmission,
+  StudentExamResult,
 } from '../types/models';
 import {
   initialBatches,
@@ -25,6 +30,8 @@ import {
   initialExams,
   initialGlobalSettings,
   initialHomeworks,
+  initialOnlineExams,
+  initialExamSubmissions,
   initialSchools,
   initialSessions,
   initialSheets,
@@ -62,6 +69,8 @@ interface DataContextType {
   sheets: LectureSheet[];
   bonusLogs: BonusLog[];
   classGoals: BatchMonthlyGoal[];
+  onlineExams: OnlineExam[];
+  examSubmissions: ExamSubmission[];
   settings: GlobalSettings;
   isLoading: boolean;
   lastCloudSyncStatus: CloudSyncStatus | null;
@@ -115,6 +124,18 @@ interface DataContextType {
     updates?: Partial<MonthlyClassSlot>
   ) => Promise<void>;
 
+  // Online Interactive Exams (MCQ & Fill in the Blanks)
+  saveOnlineExam: (exam: OnlineExam) => Promise<void>;
+  deleteOnlineExam: (examId: string) => Promise<void>;
+  submitOnlineExam: (submission: ExamSubmission) => Promise<void>;
+  regradePassageGap: (
+    submissionId: string,
+    passageId: string,
+    gapId: string,
+    newMarks: number
+  ) => Promise<void>;
+  syncOnlineExamToBatchMarks: (onlineExamId: string) => Promise<number>;
+
   // Cloud Firestore Sync Engine
   pushAllDataToFirestore: () => Promise<{ success: boolean; count: number; error?: string }>;
 
@@ -158,6 +179,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [classGoals, setClassGoals] = useState<BatchMonthlyGoal[]>(() =>
     loadLocal('classGoals', initialClassGoals)
   );
+  const [onlineExams, setOnlineExams] = useState<OnlineExam[]>(() =>
+    loadLocal('onlineExams', initialOnlineExams)
+  );
+  const [examSubmissions, setExamSubmissions] = useState<ExamSubmission[]>(() =>
+    loadLocal('examSubmissions', initialExamSubmissions)
+  );
   const [settings, setSettings] = useState<GlobalSettings>(() =>
     loadLocal('settings', initialGlobalSettings)
   );
@@ -198,6 +225,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_PREFIX + 'classGoals', JSON.stringify(classGoals));
   }, [classGoals]);
+  useEffect(() => {
+    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'onlineExams', JSON.stringify(onlineExams));
+  }, [onlineExams]);
+  useEffect(() => {
+    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'examSubmissions', JSON.stringify(examSubmissions));
+  }, [examSubmissions]);
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_PREFIX + 'settings', JSON.stringify(settings));
   }, [settings]);
@@ -356,6 +389,28 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (err) => console.info('[NPB Data] ClassGoals cloud sync:', err.message)
       );
 
+      const unsubOnlineExams = onSnapshot(
+        collection(db, 'onlineExams'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as OnlineExam);
+            setOnlineExams((prev) => mergeCollections(prev, list));
+          }
+        },
+        (err) => console.info('[NPB Data] OnlineExams cloud sync:', err.message)
+      );
+
+      const unsubExamSubmissions = onSnapshot(
+        collection(db, 'examSubmissions'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as ExamSubmission);
+            setExamSubmissions((prev) => mergeCollections(prev, list));
+          }
+        },
+        (err) => console.info('[NPB Data] ExamSubmissions cloud sync:', err.message)
+      );
+
       return () => {
         unsubBatches();
         unsubSchools();
@@ -368,6 +423,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubBonus();
         unsubSyllabi();
         unsubGoals();
+        unsubOnlineExams();
+        unsubExamSubmissions();
       };
     } catch (err) {
       console.warn('[NPB Firestore] Subscription error:', err);
@@ -468,7 +525,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         count++;
       }
 
-      const successMsg = `Successfully pushed ${count} documents across all 12 collections to Cloud Firestore! Refresh Firebase Console to view tables.`;
+      // 13. Online Interactive Exams
+      for (const oe of onlineExams) {
+        await firestoreSet(doc(db, 'onlineExams', oe.id), oe);
+        count++;
+      }
+
+      // 14. Exam Submissions
+      for (const sub of examSubmissions) {
+        await firestoreSet(doc(db, 'examSubmissions', sub.id), sub);
+        count++;
+      }
+
+      const successMsg = `Successfully pushed ${count} documents across all 14 collections to Cloud Firestore! Refresh Firebase Console to view tables.`;
       console.log(`[NPB Firebase] ${successMsg}`);
       setLastCloudSyncStatus({ status: 'success', message: successMsg, timestamp: Date.now() });
       return { success: true, count };
@@ -1498,6 +1567,174 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // --- Online Interactive Exams (MCQ & Fill in the Blanks) ---
+
+  const saveOnlineExam = async (exam: OnlineExam) => {
+    const updated = { ...exam, updatedAt: Date.now() };
+    setOnlineExams((prev) => {
+      const idx = prev.findIndex((e) => e.id === exam.id);
+      return idx >= 0 ? prev.map((e) => (e.id === exam.id ? updated : e)) : [updated, ...prev];
+    });
+    if (isFirebaseConfigured && db) {
+      try {
+        await firestoreSet(doc(db, 'onlineExams', exam.id), updated);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveOnlineExam]:', err.message);
+      }
+    }
+  };
+
+  const deleteOnlineExam = async (examId: string) => {
+    setOnlineExams((prev) => prev.filter((e) => e.id !== examId));
+    if (isFirebaseConfigured && db) {
+      try {
+        await deleteDoc(doc(db, 'onlineExams', examId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteOnlineExam]:', err.message);
+      }
+    }
+  };
+
+  const submitOnlineExam = async (submission: ExamSubmission) => {
+    setExamSubmissions((prev) => {
+      const idx = prev.findIndex((s) => s.id === submission.id);
+      return idx >= 0 ? prev.map((s) => (s.id === submission.id ? submission : s)) : [submission, ...prev];
+    });
+    if (isFirebaseConfigured && db) {
+      try {
+        await firestoreSet(doc(db, 'examSubmissions', submission.id), submission);
+      } catch (err: any) {
+        console.warn('[NPB Firestore submitOnlineExam]:', err.message);
+      }
+    }
+  };
+
+  const regradePassageGap = async (
+    submissionId: string,
+    passageId: string,
+    gapId: string,
+    newMarks: number
+  ) => {
+    let targetSub: ExamSubmission | null = null;
+    setExamSubmissions((prev) =>
+      prev.map((sub) => {
+        if (sub.id !== submissionId) return sub;
+        const passSub = sub.passageSubmissions?.[passageId];
+        if (!passSub) return sub;
+        const gapAns = passSub.answers?.[gapId];
+        if (!gapAns) return sub;
+
+        const updatedGapAns: PassageGapAnswer = {
+          ...gapAns,
+          tutorOverriddenMarks: newMarks,
+          marksObtained: newMarks,
+          isCorrect: newMarks > 0,
+        };
+
+        const updatedAnswers = { ...passSub.answers, [gapId]: updatedGapAns };
+        const newPassageScore = Object.values(updatedAnswers).reduce(
+          (acc, a) => acc + (a.tutorOverriddenMarks !== undefined ? a.tutorOverriddenMarks : a.marksObtained),
+          0
+        );
+
+        const updatedPassSub: PassageSubmission = {
+          ...passSub,
+          answers: updatedAnswers,
+          passageScore: newPassageScore,
+        };
+
+        const updatedPassages = { ...sub.passageSubmissions, [passageId]: updatedPassSub };
+        const totalPassageScore = Object.values(updatedPassages).reduce((acc, p) => acc + p.passageScore, 0);
+        const totalMcqScore = Object.values(sub.mcqSubmissions || {}).reduce(
+          (acc, m) => acc + (m.marksObtained || 0),
+          0
+        );
+        const newTotal = totalPassageScore + totalMcqScore;
+        const pct = sub.totalPossibleMarks > 0 ? Math.round((newTotal / sub.totalPossibleMarks) * 100) : 0;
+
+        targetSub = {
+          ...sub,
+          passageSubmissions: updatedPassages,
+          totalMarksObtained: newTotal,
+          percentage: pct,
+          isPassed: pct >= 50,
+        };
+        return targetSub;
+      })
+    );
+
+    if (targetSub && isFirebaseConfigured && db) {
+      try {
+        await firestoreSet(doc(db, 'examSubmissions', submissionId), targetSub);
+      } catch (err: any) {
+        console.warn('[NPB Firestore regradePassageGap]:', err.message);
+      }
+    }
+  };
+
+  const syncOnlineExamToBatchMarks = async (onlineExamId: string): Promise<number> => {
+    const onlineExam = onlineExams.find((e) => e.id === onlineExamId);
+    if (!onlineExam || !onlineExam.batchIds || onlineExam.batchIds.length === 0) return 0;
+
+    const primaryBatchId = onlineExam.batchIds[0];
+    const relevantSubs = examSubmissions.filter((s) => s.examId === onlineExamId);
+    if (relevantSubs.length === 0) return 0;
+
+    let targetExam = exams.find((e) => e.id === `exam-synced-${onlineExam.id}`);
+    const resultsMap: Record<string, StudentExamResult> = targetExam?.results ? { ...targetExam.results } : {};
+
+    let syncedCount = 0;
+
+    relevantSubs.forEach((sub) => {
+      const matchedStudent = students.find(
+        (st) =>
+          (sub.studentMobile && st.guardianPhone?.replace(/\D/g, '') === sub.studentMobile.replace(/\D/g, '')) ||
+          st.name.trim().toLowerCase() === sub.studentName.trim().toLowerCase()
+      );
+
+      const stuId = matchedStudent ? matchedStudent.id : sub.studentId || `stu-online-${sub.id}`;
+
+      resultsMap[stuId] = {
+        studentId: stuId,
+        isAbsent: false,
+        sectionMarks: {
+          'sec-online-full': sub.totalMarksObtained,
+        },
+        totalObtained: sub.totalMarksObtained,
+        percentage: sub.percentage,
+        remarks: `Online Exam (${sub.tabSwitchCount > 0 ? `${sub.tabSwitchCount} tab switches` : 'No tab switch'})`,
+      };
+      syncedCount++;
+    });
+
+    const syncedExam: Exam = {
+      id: `exam-synced-${onlineExam.id}`,
+      batchId: primaryBatchId,
+      title: `[Online] ${onlineExam.title}`,
+      examDate: new Date().toISOString().split('T')[0],
+      examType: 'weekly_quiz',
+      scopeType: 'batch_wide',
+      sections: [
+        {
+          id: 'sec-online-full',
+          name: 'Online Exam Score',
+          category: 'MCQ',
+          linkedTopicTitles: [onlineExam.subject],
+          maxMarks: onlineExam.totalMarks,
+        },
+      ],
+      totalMaxMarks: onlineExam.totalMarks,
+      passMarks: onlineExam.passMarks,
+      absentPolicy: 'exclude_from_avg',
+      status: 'completed',
+      results: resultsMap,
+      createdAt: targetExam?.createdAt || Date.now(),
+    };
+
+    await saveExam(syncedExam);
+    return syncedCount;
+  };
+
   // --- Seed Data & System Management ---
 
   const loadDemoData = () => {
@@ -1512,6 +1749,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSheets(initialSheets);
     setBonusLogs(initialBonusLogs);
     setClassGoals(initialClassGoals);
+    setOnlineExams(initialOnlineExams);
+    setExamSubmissions(initialExamSubmissions);
     setSettings(initialGlobalSettings);
   };
 
@@ -1527,6 +1766,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSheets([]);
     setBonusLogs([]);
     setClassGoals([]);
+    setOnlineExams([]);
+    setExamSubmissions([]);
     setSettings(initialGlobalSettings);
   };
 
@@ -1545,6 +1786,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sheets,
       bonusLogs,
       classGoals,
+      onlineExams,
+      examSubmissions,
       settings,
     };
     return JSON.stringify(fullDb, null, 2);
@@ -1564,6 +1807,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (parsed.sheets) setSheets(parsed.sheets);
       if (parsed.bonusLogs) setBonusLogs(parsed.bonusLogs);
       if (parsed.classGoals) setClassGoals(parsed.classGoals);
+      if (parsed.onlineExams) setOnlineExams(parsed.onlineExams);
+      if (parsed.examSubmissions) setExamSubmissions(parsed.examSubmissions);
       if (parsed.settings) setSettings(parsed.settings);
       return true;
     } catch (err) {
@@ -1644,6 +1889,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sheets,
         bonusLogs,
         classGoals,
+        onlineExams,
+        examSubmissions,
         settings,
         isLoading,
         lastCloudSyncStatus,
@@ -1677,6 +1924,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveBatchMonthlyGoal,
         deleteBatchMonthlyGoal,
         updateClassSlotStatus,
+        saveOnlineExam,
+        deleteOnlineExam,
+        submitOnlineExam,
+        regradePassageGap,
+        syncOnlineExamToBatchMarks,
         pushAllDataToFirestore,
         loadDemoData,
         clearAllData,

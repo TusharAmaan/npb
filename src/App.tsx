@@ -34,6 +34,8 @@ import { GuardianReportView } from './components/reports/GuardianReportView';
 import { SettingsView } from './components/settings/SettingsView';
 import { AdminLogin } from './components/auth/AdminLogin';
 import { ClassGoalsManager } from './components/goals/ClassGoalsManager';
+import { StudentExamPortal } from './components/exams/online/StudentExamPortal';
+import { OnlineExamManager } from './components/exams/online/OnlineExamManager';
 
 // Admin Layout Shell
 const AdminLayout: React.FC = () => {
@@ -82,6 +84,7 @@ export function App() {
                 {/* Public Portals */}
                 <Route path="/leaderboard" element={<PublicLeaderboardView />} />
                 <Route path="/report/:shareToken" element={<GuardianReportView />} />
+                <Route path="/exam/:examCode" element={<StudentExamPortal />} />
                 <Route path="/login" element={<AdminLogin />} />
 
                 {/* Admin Protected Routes */}
@@ -98,6 +101,7 @@ export function App() {
                   <Route path="syllabus" element={<SyllabusManagerView />} />
                   <Route path="homework" element={<HomeworkManager />} />
                   <Route path="exams" element={<ExamManager />} />
+                  <Route path="online-exams" element={<OnlineExamManager />} />
                   {/* Tutor Tools */}
                   <Route path="tools" element={<WeakTopicRadar />} />
                   <Route path="tools/weak-topics" element={<WeakTopicRadar />} />

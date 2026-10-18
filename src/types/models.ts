@@ -408,3 +408,133 @@ export interface BatchMonthlyGoal {
   createdAt: number;
   updatedAt: number;
 }
+
+// --- Online Interactive Exam System (MCQ & Fill In The Blanks) ---
+
+export interface McqOption {
+  id: string; // 'opt-a', 'opt-b', 'opt-c', 'opt-d'
+  label: string; // 'A', 'B', 'C', 'D'
+  text: string;
+}
+
+export interface McqQuestion {
+  id: string;
+  question: string;
+  options: McqOption[];
+  correctOptionIds: string[]; // Supports single or multiple correct answers
+  allowMultiple: boolean; // false for single radio, true for multi-select checkboxes
+  marks: number;
+  explanation?: string; // Optional explanation shown in solution review
+}
+
+export interface PassageGap {
+  id: string; // 'a', 'b', 'c', ...
+  gapLabel: string; // '(a)', '(b)', '(c)'
+  acceptedAnswers: string[]; // e.g. ['natural', 'naturals'] (evaluated case-insensitively)
+  marks: number; // e.g. 0.5 or 1 mark
+  clueHint?: string; // Root word in clue box if form change is required (e.g. "nature")
+}
+
+export interface PassageSection {
+  id: string;
+  title: string; // e.g. "Question 1: Fill in the blanks with suitable words from the box"
+  instructions: string; // e.g. "You may need to change the forms of some words. You may use one word more than once."
+  passageType: 'with_clues' | 'without_clues';
+  clues: string[]; // Clue words placed in the box (e.g. ['nature', 'pollute', 'aware'])
+  hasFormChange: boolean; // if true, word forms need change (nature -> natural)
+  directPlacementFeedback: boolean; // if true and clues placed directly without form change, show instant right/wrong; if form change, right/wrong shown after submit!
+  passageText: string; // Passage text containing gaps (a), (b), (c)...
+  gaps: PassageGap[]; // Dynamic count of gaps (e.g. 5, 8, 10, 12 gaps)
+}
+
+export type OnlineExamLinkMode = 'permanent' | 'temporary';
+
+export interface OnlineExam {
+  id: string;
+  examCode: string; // Short unique code e.g. "ENG-SSC-01"
+  title: string;
+  subject: string;
+  batchIds: string[]; // Target batch IDs
+  description?: string;
+
+  // Link & Availability
+  linkMode: OnlineExamLinkMode; // 'permanent' | 'temporary'
+  isActive: boolean; // Manual on/off toggle
+  startDate?: string; // e.g. "2026-10-18T18:00"
+  endDate?: string; // e.g. "2026-10-20T23:59"
+
+  // Timing & Security
+  durationMinutes: number; // 0 for untimed, or e.g. 15, 20, 30 minutes
+  tabSwitchPenalty: 'warn_and_record' | 'auto_submit' | 'reset_exam';
+  attemptLimit: number; // 1 for single attempt only, 0 for unlimited practice
+
+  // Review & Feedback
+  showScoreImmediately: boolean; // Show score & grade upon submission
+  showSolutionsImmediately: boolean; // Show correct answers immediately or keep hidden until tutor releases
+
+  // Questions Content
+  passages: PassageSection[]; // Fill in the blanks passages (can be multiple)
+  mcqs: McqQuestion[]; // Multiple choice questions
+
+  totalMarks: number;
+  passMarks: number;
+
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PassageGapAnswer {
+  gapId: string;
+  studentAnswer: string;
+  isCorrect: boolean;
+  marksObtained: number;
+  maxMarks: number;
+  tutorOverriddenMarks?: number; // Manual regrade override
+}
+
+export interface PassageSubmission {
+  passageId: string;
+  answers: Record<string, PassageGapAnswer>; // gapId -> answer
+  passageScore: number;
+  passageMaxMarks: number;
+}
+
+export interface McqSubmission {
+  questionId: string;
+  selectedOptionIds: string[];
+  isCorrect: boolean;
+  marksObtained: number;
+  maxMarks: number;
+}
+
+export interface ExamSubmission {
+  id: string;
+  examId: string;
+  examCode: string;
+  batchId?: string;
+  studentId?: string; // Optional matched student ID from student directory
+  studentName: string;
+  studentMobile: string;
+  studentClass?: string;
+  studentRoll?: string;
+
+  // Answers
+  passageSubmissions: Record<string, PassageSubmission>; // passageId -> submission
+  mcqSubmissions: Record<string, McqSubmission>; // questionId -> submission
+
+  // Scores
+  totalMarksObtained: number;
+  totalPossibleMarks: number;
+  percentage: number;
+  isPassed: boolean;
+
+  // Proctoring & Meta
+  tabSwitchCount: number;
+  timeSpentSeconds: number;
+  startedAt: number;
+  submittedAt: number;
+
+  // Integration
+  syncedToBatchExamId?: string;
+}
+

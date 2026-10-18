@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import { useModal } from '../../context/ModalContext';
 import { Exam, ExamSection, ExamCategoryType, SyllabusTermType } from '../../types/models';
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react';
 
 export const ExamManager: React.FC = () => {
+  const navigate = useNavigate();
   const { batches, students, schools, exams, syllabi, syllabusSchemes, saveExam, deleteExam } = useData();
   const { confirm } = useModal();
 
@@ -307,13 +309,24 @@ _Detailed individual diagnostic report cards are accessible via the parent porta
           </p>
         </div>
 
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-light-indigo text-white hover:bg-light-slate-blue shadow-md shadow-light-indigo/25 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>+ Create New Exam</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/admin/online-exams')}
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-md shadow-amber-500/25 transition-all"
+            title="Create and share MCQ & Fill in the Blanks exams"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Online Exam Creator (MCQ & Blanks)</span>
+          </button>
+
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-light-indigo text-white hover:bg-light-slate-blue shadow-md shadow-light-indigo/25 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Create In-Class Exam</span>
+          </button>
+        </div>
       </div>
 
       {/* Control Strip: Batch & Filters */}

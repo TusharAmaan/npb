@@ -90,6 +90,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       color: 'text-light-slate-blue',
     },
     {
+      to: '/admin/online-exams',
+      label: 'Online Exam Creator',
+      icon: Sparkles,
+      color: 'text-amber-500',
+    },
+    {
       to: '/admin/tools',
       label: 'Tutor Power Tools',
       icon: Sparkles,

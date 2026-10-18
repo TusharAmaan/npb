@@ -74,6 +74,18 @@ service cloud.firestore {
       allow write: if isTusharAdmin();
     }
 
+    // Online Interactive Exams: Public read for students taking exam, only tushar.aman05@gmail.com can create/edit
+    match /onlineExams/{examId} {
+      allow read: if true;
+      allow write: if isTusharAdmin();
+    }
+
+    // Exam Submissions: Public read and create (students submit exam answers without login), only tushar.aman05@gmail.com can update/delete
+    match /examSubmissions/{submissionId} {
+      allow read, create: if true;
+      allow update, delete: if isTusharAdmin();
+    }
+
     // Catch-all fallback: Read allowed, all writes strictly locked to tushar.aman05@gmail.com
     match /{document=**} {
       allow read: if true;
