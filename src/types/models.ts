@@ -369,3 +369,42 @@ export interface StudentAnalytics {
   }[];
   uncollectedSheets: LectureSheet[];
 }
+
+export type ClassSlotStatus =
+  | 'scheduled'
+  | 'completed'
+  | 'canceled'
+  | 'postponed'
+  | 'rescheduled'
+  | 'makeup';
+
+export interface MonthlyClassSlot {
+  id: string;
+  date: string; // YYYY-MM-DD
+  dayOfWeek: WeeklyDay;
+  startTime: string;
+  endTime: string;
+  slotType: 'routine' | 'extra' | 'makeup';
+  status: ClassSlotStatus;
+  sessionId?: string;
+  customTopicTitle?: string;
+  cancellationReason?: string;
+  rescheduledToDate?: string;
+  rescheduledToTime?: string;
+  notes?: string;
+  createdAt: number;
+}
+
+export interface BatchMonthlyGoal {
+  id: string; // "goal-${batchId}-${yearMonth}"
+  batchId: string;
+  yearMonth: string; // "YYYY-MM"
+  monthName: string; // "October 2026"
+  targetClassCount: number;
+  startFromDate: string; // YYYY-MM-DD
+  weeklyRoutineSnapshot: WeeklySlot[];
+  slots: MonthlyClassSlot[];
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}

@@ -17,6 +17,7 @@ import {
   CalendarClock,
   Landmark,
   BookOpen,
+  Target,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -45,6 +46,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       label: 'Class Records & History',
       icon: FileSpreadsheet,
       color: 'text-spiro-disco-ball',
+    },
+    {
+      to: '/admin/class-goals',
+      label: 'Class Goals & Progress',
+      icon: Target,
+      color: 'text-amber-500',
     },
     {
       to: '/admin/batches',

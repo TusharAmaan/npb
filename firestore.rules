@@ -68,6 +68,12 @@ service cloud.firestore {
       allow write: if isTusharAdmin();
     }
 
+    // Class Goals & Routine Targets: Only tushar.aman05@gmail.com can write
+    match /classGoals/{goalId} {
+      allow read: if true;
+      allow write: if isTusharAdmin();
+    }
+
     // Catch-all fallback: Read allowed, all writes strictly locked to tushar.aman05@gmail.com
     match /{document=**} {
       allow read: if true;

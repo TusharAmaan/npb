@@ -33,6 +33,7 @@ import { PublicLeaderboardView } from './components/leaderboard/PublicLeaderboar
 import { GuardianReportView } from './components/reports/GuardianReportView';
 import { SettingsView } from './components/settings/SettingsView';
 import { AdminLogin } from './components/auth/AdminLogin';
+import { ClassGoalsManager } from './components/goals/ClassGoalsManager';
 
 // Admin Layout Shell
 const AdminLayout: React.FC = () => {
@@ -88,6 +89,8 @@ export function App() {
                   <Route index element={<Navigate to="/admin/dashboard" replace />} />
                   <Route path="dashboard" element={<DashboardView />} />
                   <Route path="live-class" element={<LiveClassSession />} />
+                  <Route path="class-goals" element={<ClassGoalsManager />} />
+                  <Route path="goals" element={<Navigate to="/admin/class-goals" replace />} />
                   <Route path="records" element={<LiveClassSession defaultTab="records" />} />
                   <Route path="batches" element={<BatchList />} />
                   <Route path="schools" element={<SchoolDirectory />} />

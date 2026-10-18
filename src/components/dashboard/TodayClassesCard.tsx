@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Batch, Student } from '../../types/models';
-import { Radio, Clock, Users, ArrowRight, CalendarDays, Sparkles } from 'lucide-react';
+import { Radio, Clock, Users, ArrowRight, CalendarDays, Sparkles, Target } from 'lucide-react';
 
 interface TodayClassesCardProps {
   batches: Batch[];
@@ -39,15 +39,26 @@ export const TodayClassesCard: React.FC<TodayClassesCardProps> = ({ batches, stu
           </h2>
         </div>
 
-        {todaysBatches.length > 0 && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => navigate('/admin/live-class')}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-weird-green text-slate-950 hover:bg-wintergreen shadow-md shadow-weird-green/20 transition-transform active:scale-95"
+            onClick={() => navigate('/admin/class-goals')}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-dark-surface hover:bg-slate-50 text-slate-700 dark:text-slate-300 transition-colors shadow-2xs"
+            title="View Monthly Routine Goals and Progress"
           >
-            <Radio className="w-4 h-4 animate-pulse text-emerald-900" />
-            <span>Start Live Class</span>
+            <Target className="w-3.5 h-3.5 text-amber-500" />
+            <span>Monthly Goals</span>
           </button>
-        )}
+
+          {todaysBatches.length > 0 && (
+            <button
+              onClick={() => navigate('/admin/live-class')}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-weird-green text-slate-950 hover:bg-wintergreen shadow-md shadow-weird-green/20 transition-transform active:scale-95"
+            >
+              <Radio className="w-4 h-4 animate-pulse text-emerald-900" />
+              <span>Start Live Class</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {todaysBatches.length === 0 ? (

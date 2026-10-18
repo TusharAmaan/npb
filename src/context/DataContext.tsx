@@ -1,14 +1,17 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   Batch,
+  BatchMonthlyGoal,
   BonusLog,
   ClassSession,
+  ClassSlotStatus,
   Exam,
   GlobalSettings,
   Homework,
   HomeworkStatus,
   HomeworkSubmission,
   LectureSheet,
+  MonthlyClassSlot,
   School,
   Student,
   StudentSyllabus,
@@ -18,6 +21,7 @@ import {
 import {
   initialBatches,
   initialBonusLogs,
+  initialClassGoals,
   initialExams,
   initialGlobalSettings,
   initialHomeworks,
@@ -57,6 +61,7 @@ interface DataContextType {
   exams: Exam[];
   sheets: LectureSheet[];
   bonusLogs: BonusLog[];
+  classGoals: BatchMonthlyGoal[];
   settings: GlobalSettings;
   isLoading: boolean;
   lastCloudSyncStatus: CloudSyncStatus | null;
@@ -101,6 +106,14 @@ interface DataContextType {
   saveBonusLog: (log: BonusLog) => Promise<void>;
   deleteBonusLog: (logId: string) => Promise<void>;
   updateSettings: (newSettings: Partial<GlobalSettings>) => Promise<void>;
+  saveBatchMonthlyGoal: (goal: BatchMonthlyGoal) => Promise<void>;
+  deleteBatchMonthlyGoal: (goalId: string) => Promise<void>;
+  updateClassSlotStatus: (
+    goalId: string,
+    slotId: string,
+    status: ClassSlotStatus,
+    updates?: Partial<MonthlyClassSlot>
+  ) => Promise<void>;
 
   // Cloud Firestore Sync Engine
   pushAllDataToFirestore: () => Promise<{ success: boolean; count: number; error?: string }>;
@@ -142,6 +155,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [exams, setExams] = useState<Exam[]>(() => loadLocal('exams', initialExams));
   const [sheets, setSheets] = useState<LectureSheet[]>(() => loadLocal('sheets', initialSheets));
   const [bonusLogs, setBonusLogs] = useState<BonusLog[]>(() => loadLocal('bonusLogs', initialBonusLogs));
+  const [classGoals, setClassGoals] = useState<BatchMonthlyGoal[]>(() =>
+    loadLocal('classGoals', initialClassGoals)
+  );
   const [settings, setSettings] = useState<GlobalSettings>(() =>
     loadLocal('settings', initialGlobalSettings)
   );
@@ -179,6 +195,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_PREFIX + 'bonusLogs', JSON.stringify(bonusLogs));
   }, [bonusLogs]);
+  useEffect(() => {
+    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'classGoals', JSON.stringify(classGoals));
+  }, [classGoals]);
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_PREFIX + 'settings', JSON.stringify(settings));
   }, [settings]);
@@ -326,6 +345,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (err) => console.info('[NPB Data] Student syllabi cloud sync:', err.message)
       );
 
+      const unsubGoals = onSnapshot(
+        collection(db, 'classGoals'),
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          if (!snapshot.empty) {
+            const list = snapshot.docs.map((d: DocumentData) => d.data() as BatchMonthlyGoal);
+            setClassGoals((prev) => mergeCollections(prev, list));
+          }
+        },
+        (err) => console.info('[NPB Data] ClassGoals cloud sync:', err.message)
+      );
+
       return () => {
         unsubBatches();
         unsubSchools();
@@ -337,6 +367,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubSyllabusSchemes();
         unsubBonus();
         unsubSyllabi();
+        unsubGoals();
       };
     } catch (err) {
       console.warn('[NPB Firestore] Subscription error:', err);
@@ -431,7 +462,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         count++;
       }
 
-      const successMsg = `Successfully pushed ${count} documents across all 11 collections to Cloud Firestore! Refresh Firebase Console to view tables.`;
+      // 12. Class Goals & Routine Targets
+      for (const goal of classGoals) {
+        await firestoreSet(doc(db, 'classGoals', goal.id), goal);
+        count++;
+      }
+
+      const successMsg = `Successfully pushed ${count} documents across all 12 collections to Cloud Firestore! Refresh Firebase Console to view tables.`;
       console.log(`[NPB Firebase] ${successMsg}`);
       setLastCloudSyncStatus({ status: 'success', message: successMsg, timestamp: Date.now() });
       return { success: true, count };
@@ -832,10 +869,58 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
       }
     }
+
+    // Automated Class Goals & Progress Linkage: auto-mark slot completed if matching session date & batch
+    setClassGoals((prevGoals) =>
+      prevGoals.map((g) => {
+        if (g.batchId !== session.batchId) return g;
+        const slotIdx = g.slots.findIndex((s) => s.date === session.date);
+        if (slotIdx === -1) return g;
+        const newSlots = [...g.slots];
+        newSlots[slotIdx] = {
+          ...newSlots[slotIdx],
+          status: 'completed',
+          sessionId: session.id,
+          customTopicTitle:
+            newSlots[slotIdx].customTopicTitle ||
+            session.topicsTaught?.join(', ') ||
+            session.generalLessonSummary,
+        };
+        const updatedGoal = { ...g, slots: newSlots, updatedAt: Date.now() };
+        if (isFirebaseConfigured && db) {
+          firestoreSet(doc(db, 'classGoals', g.id), updatedGoal).catch((err) =>
+            console.warn('[NPB Firestore classGoals session link]:', err.message)
+          );
+        }
+        return updatedGoal;
+      })
+    );
   };
 
   const deleteClassSession = async (sessionId: string) => {
     setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+
+    // Reset linked slot back to scheduled
+    setClassGoals((prevGoals) =>
+      prevGoals.map((g) => {
+        const slotIdx = g.slots.findIndex((s) => s.sessionId === sessionId);
+        if (slotIdx === -1) return g;
+        const newSlots = [...g.slots];
+        newSlots[slotIdx] = {
+          ...newSlots[slotIdx],
+          status: 'scheduled',
+          sessionId: undefined,
+        };
+        const updatedGoal = { ...g, slots: newSlots, updatedAt: Date.now() };
+        if (isFirebaseConfigured && db) {
+          firestoreSet(doc(db, 'classGoals', g.id), updatedGoal).catch((err) =>
+            console.warn('[NPB Firestore classGoals unlink on session delete]:', err.message)
+          );
+        }
+        return updatedGoal;
+      })
+    );
+
     if (isFirebaseConfigured && db) {
       try {
         await deleteDoc(doc(db, 'classSessions', sessionId));
@@ -1358,6 +1443,61 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSyllabi(updatedSyllabi);
   };
 
+  // --- Class Goals & Routine Tracking Actions ---
+
+  const saveBatchMonthlyGoal = async (goal: BatchMonthlyGoal) => {
+    const updated = { ...goal, updatedAt: Date.now() };
+    setClassGoals((prev) => {
+      const idx = prev.findIndex((g) => g.id === goal.id);
+      return idx >= 0 ? prev.map((g) => (g.id === goal.id ? updated : g)) : [updated, ...prev];
+    });
+    if (isFirebaseConfigured && db) {
+      try {
+        await firestoreSet(doc(db, 'classGoals', goal.id), updated);
+      } catch (err: any) {
+        console.warn('[NPB Firestore saveBatchMonthlyGoal]:', err.message);
+      }
+    }
+  };
+
+  const deleteBatchMonthlyGoal = async (goalId: string) => {
+    setClassGoals((prev) => prev.filter((g) => g.id !== goalId));
+    if (isFirebaseConfigured && db) {
+      try {
+        await deleteDoc(doc(db, 'classGoals', goalId));
+      } catch (err: any) {
+        console.warn('[NPB Firestore deleteBatchMonthlyGoal]:', err.message);
+      }
+    }
+  };
+
+  const updateClassSlotStatus = async (
+    goalId: string,
+    slotId: string,
+    status: ClassSlotStatus,
+    updates?: Partial<MonthlyClassSlot>
+  ) => {
+    let updatedGoal: BatchMonthlyGoal | null = null;
+    setClassGoals((prev) =>
+      prev.map((g) => {
+        if (g.id !== goalId) return g;
+        const newSlots = g.slots.map((s) => {
+          if (s.id !== slotId) return s;
+          return { ...s, status, ...(updates || {}) };
+        });
+        updatedGoal = { ...g, slots: newSlots, updatedAt: Date.now() };
+        return updatedGoal;
+      })
+    );
+    if (updatedGoal && isFirebaseConfigured && db) {
+      try {
+        await firestoreSet(doc(db, 'classGoals', goalId), updatedGoal);
+      } catch (err: any) {
+        console.warn('[NPB Firestore updateClassSlotStatus]:', err.message);
+      }
+    }
+  };
+
   // --- Seed Data & System Management ---
 
   const loadDemoData = () => {
@@ -1371,6 +1511,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setExams(initialExams);
     setSheets(initialSheets);
     setBonusLogs(initialBonusLogs);
+    setClassGoals(initialClassGoals);
     setSettings(initialGlobalSettings);
   };
 
@@ -1385,6 +1526,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setExams([]);
     setSheets([]);
     setBonusLogs([]);
+    setClassGoals([]);
     setSettings(initialGlobalSettings);
   };
 
@@ -1402,6 +1544,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       exams,
       sheets,
       bonusLogs,
+      classGoals,
       settings,
     };
     return JSON.stringify(fullDb, null, 2);
@@ -1420,6 +1563,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (parsed.exams) setExams(parsed.exams);
       if (parsed.sheets) setSheets(parsed.sheets);
       if (parsed.bonusLogs) setBonusLogs(parsed.bonusLogs);
+      if (parsed.classGoals) setClassGoals(parsed.classGoals);
       if (parsed.settings) setSettings(parsed.settings);
       return true;
     } catch (err) {
@@ -1499,6 +1643,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         exams,
         sheets,
         bonusLogs,
+        classGoals,
         settings,
         isLoading,
         lastCloudSyncStatus,
@@ -1529,6 +1674,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveBonusLog,
         deleteBonusLog,
         updateSettings,
+        saveBatchMonthlyGoal,
+        deleteBatchMonthlyGoal,
+        updateClassSlotStatus,
         pushAllDataToFirestore,
         loadDemoData,
         clearAllData,
