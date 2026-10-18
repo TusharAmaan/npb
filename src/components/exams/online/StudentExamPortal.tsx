@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../../../context/DataContext';
+import { db } from '../../../lib/firebase';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import {
   OnlineExam,
   ExamSubmission,
@@ -36,14 +38,73 @@ export const StudentExamPortal: React.FC = () => {
   const navigate = useNavigate();
   const { onlineExams, submitOnlineExam, batches } = useData();
 
-  // Find the exam matching either examCode or id
+  // Fast direct exam state & loader
+  const [directExam, setDirectExam] = useState<OnlineExam | null>(null);
+  const [isExamLoading, setIsExamLoading] = useState<boolean>(true);
+
+  // Find the exam matching either examCode or id (from Context or direct fast query)
   const exam = useMemo(() => {
-    return onlineExams.find(
+    if (!examCode) return null;
+    const clean = examCode.trim().toLowerCase();
+    const fromContext = onlineExams.find(
       (e) =>
-        e.examCode.toLowerCase() === examCode?.toLowerCase() ||
-        e.id.toLowerCase() === examCode?.toLowerCase()
+        e.examCode.toLowerCase() === clean ||
+        e.id.toLowerCase() === clean
     );
-  }, [onlineExams, examCode]);
+    return fromContext || directExam;
+  }, [onlineExams, examCode, directExam]);
+
+  // Fast direct Firestore lookup on mount if not immediately present in cache
+  useEffect(() => {
+    if (exam) {
+      setIsExamLoading(false);
+      return;
+    }
+    if (!examCode) {
+      setIsExamLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    const cleanCode = examCode.trim().toUpperCase();
+
+    const fetchFastExam = async () => {
+      try {
+        if (db) {
+          // 1. Direct query by examCode
+          const q = query(collection(db, 'onlineExams'), where('examCode', '==', cleanCode));
+          const snapshot = await getDocs(q);
+          if (!snapshot.empty && isMounted) {
+            const fetched = snapshot.docs[0].data() as OnlineExam;
+            setDirectExam(fetched);
+            setIsExamLoading(false);
+            return;
+          }
+
+          // 2. Direct lookup by ID
+          const docSnap = await getDoc(doc(db, 'onlineExams', examCode.trim()));
+          if (docSnap.exists() && isMounted) {
+            setDirectExam(docSnap.data() as OnlineExam);
+            setIsExamLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Fast exam fetch notice:', err);
+      }
+
+      // If not resolved after 2.5s, finish loading so user sees fallback
+      setTimeout(() => {
+        if (isMounted) setIsExamLoading(false);
+      }, 2500);
+    };
+
+    fetchFastExam();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [examCode, exam]);
 
   // Exam phase
   const [phase, setPhase] = useState<'welcome' | 'taking' | 'submitted'>('welcome');
@@ -469,21 +530,32 @@ export const StudentExamPortal: React.FC = () => {
     );
   };
 
+  // Fast Loading State
+  if (isExamLoading && !exam) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-[#121216] flex flex-col items-center justify-center p-4">
+        <div className="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <h2 className="text-base font-extrabold text-slate-800 dark:text-white">Loading Exam...</h2>
+        <p className="text-xs text-slate-400 mt-1">Connecting to NPB Assessment Engine</p>
+      </div>
+    );
+  }
+
   // If exam not found
   if (!exam) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-dark-base flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-dark-surface p-8 rounded-3xl border border-slate-200 dark:border-dark-border max-w-md w-full text-center space-y-4 shadow-xl">
-          <div className="w-14 h-14 rounded-2xl bg-red-100 dark:bg-red-950 text-red-600 flex items-center justify-center mx-auto">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#121216] flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-[#1e1e24] p-8 rounded-3xl border border-slate-200 dark:border-white/10 max-w-md w-full text-center space-y-4 shadow-xl">
+          <div className="w-14 h-14 rounded-2xl bg-red-100 dark:bg-red-950/60 text-red-600 flex items-center justify-center mx-auto">
             <XCircle className="w-8 h-8" />
           </div>
           <h2 className="text-xl font-black text-slate-900 dark:text-white">Exam Not Found</h2>
-          <p className="text-xs text-slate-500">
-            The exam link you entered does not exist or has expired. Please verify with your tutor on WhatsApp.
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            The exam link <code className="font-mono text-amber-500 font-bold">{examCode}</code> does not exist or has expired. Please verify with your tutor on WhatsApp.
           </p>
           <button
             onClick={() => navigate('/')}
-            className="w-full py-2.5 rounded-xl text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900"
+            className="w-full py-2.5 rounded-xl text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 transition-opacity"
           >
             Go to Homepage
           </button>
@@ -495,18 +567,18 @@ export const StudentExamPortal: React.FC = () => {
   // If exam is deactivated
   if (!exam.isActive) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-dark-base flex items-center justify-center p-4">
-        <div className="bg-white dark:bg-dark-surface p-8 rounded-3xl border border-slate-200 dark:border-dark-border max-w-md w-full text-center space-y-4 shadow-xl">
-          <div className="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-950 text-amber-600 flex items-center justify-center mx-auto">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#121216] flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-[#1e1e24] p-8 rounded-3xl border border-slate-200 dark:border-white/10 max-w-md w-full text-center space-y-4 shadow-xl">
+          <div className="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 flex items-center justify-center mx-auto">
             <AlertTriangle className="w-8 h-8" />
           </div>
           <h2 className="text-xl font-black text-slate-900 dark:text-white">Exam Currently Closed</h2>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
             This exam &quot;{exam.title}&quot; is currently closed or has reached its submission deadline.
           </p>
           <button
             onClick={() => navigate('/')}
-            className="w-full py-2.5 rounded-xl text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900"
+            className="w-full py-2.5 rounded-xl text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 transition-opacity"
           >
             Back to Homepage
           </button>
@@ -533,125 +605,115 @@ export const StudentExamPortal: React.FC = () => {
       <canvas ref={scorecardCanvasRef} className="hidden" />
 
       {/* -------------------------------------------------------------
-          PHASE 1: WELCOME & VERIFICATION SCREEN
+          PHASE 1: WELCOME & VERIFICATION SCREEN (CLEAN, MODERN, UNCLUTTERED)
          ------------------------------------------------------------- */}
       {phase === 'welcome' && (
-        <div className="max-w-2xl mx-auto pt-8 px-4 sm:px-6">
-          <div className="bg-white dark:bg-dark-surface rounded-3xl border border-slate-200 dark:border-dark-border p-6 sm:p-8 shadow-xl space-y-6">
-            {/* Header Badge */}
-            <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-dark-border pb-4">
-              <div className="flex items-center gap-2.5">
-                <span className="p-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
+        <div className="min-h-screen flex items-center justify-center py-8 px-4 sm:px-6">
+          <div className="w-full max-w-xl bg-white dark:bg-[#1e1e24] rounded-3xl border border-slate-200/80 dark:border-white/10 p-6 sm:p-8 shadow-2xl space-y-5">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 dark:border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <span className="p-2.5 rounded-2xl bg-amber-500/15 text-amber-500 shrink-0">
                   <BookOpen className="w-6 h-6" />
                 </span>
                 <div>
-                  <span className="text-[11px] font-black tracking-wider uppercase text-amber-600 dark:text-amber-400 block">
+                  <span className="text-[11px] font-black tracking-wider uppercase text-amber-500 block">
                     Nobo Prottashay Batch (NPB)
                   </span>
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-tight">
                     {exam.title}
                   </h1>
                 </div>
               </div>
-              <span className="px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+              <span className="px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-300 font-mono shrink-0">
                 {exam.examCode}
               </span>
             </div>
 
-            {/* Exam Meta Strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-center">
+            {/* Clean Exam Meta Badges */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 text-center">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Subject
                 </span>
-                <span className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white mt-0.5 block truncate">
+                <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 mt-0.5 block truncate">
                   {exam.subject}
                 </span>
               </div>
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-center">
+              <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 text-center">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Total Marks
                 </span>
-                <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-wintergreen mt-0.5 block">
+                <span className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 mt-0.5 block">
                   {exam.totalMarks} Marks
                 </span>
               </div>
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-center">
+              <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 text-center">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Time Limit
                 </span>
-                <span className="text-xs sm:text-sm font-black text-sky-600 dark:text-spiro-disco-ball mt-0.5 block">
+                <span className="text-xs sm:text-sm font-black text-sky-600 dark:text-sky-400 mt-0.5 block">
                   {exam.durationMinutes > 0 ? `${exam.durationMinutes} Mins` : 'Untimed'}
                 </span>
               </div>
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-center">
+              <div className="p-2.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 text-center">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Pass Mark
                 </span>
-                <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white mt-0.5 block">
+                <span className="text-xs sm:text-sm font-black text-amber-600 dark:text-amber-400 mt-0.5 block">
                   {exam.passMarks} Marks
                 </span>
               </div>
             </div>
 
-            {/* Content Outline */}
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2">
-              <span className="text-[11px] font-black uppercase text-slate-500 tracking-wider">
-                Exam Sections Outline:
-              </span>
-              <ul className="text-xs text-slate-700 dark:text-slate-300 space-y-1.5">
-                {exam.passages.map((p, idx) => (
-                  <li key={p.id} className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-600 text-[11px] font-bold flex items-center justify-center shrink-0">
-                      {idx + 1}
-                    </span>
-                    <span>
-                      <strong>{p.title}</strong> — ({p.gaps.length} blanks,{' '}
-                      {p.passageType === 'with_clues' ? 'With Clues' : 'Without Clues'})
-                    </span>
-                  </li>
-                ))}
-                {exam.mcqs.length > 0 && (
-                  <li className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-md bg-sky-500/20 text-sky-600 text-[11px] font-bold flex items-center justify-center shrink-0">
-                      MCQ
-                    </span>
-                    <span>
-                      <strong>Multiple Choice Questions</strong> — ({exam.mcqs.length} Questions)
-                    </span>
-                  </li>
+            {/* Questions Summary Strip */}
+            {totalQuestionsCount > 0 && (
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 px-1">
+                <span>
+                  Questions:{' '}
+                  <strong className="text-slate-800 dark:text-slate-200">
+                    {totalQuestionsCount} items
+                  </strong>{' '}
+                  ({exam.mcqs.length > 0 ? `${exam.mcqs.length} MCQs` : ''}
+                  {exam.mcqs.length > 0 && exam.passages.length > 0 ? ' + ' : ''}
+                  {exam.passages.length > 0
+                    ? `${exam.passages.reduce((a, b) => a + b.gaps.length, 0)} blanks`
+                    : ''}
+                  )
+                </span>
+                {exam.showScoreImmediately && (
+                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Instant Result</span>
+                  </span>
                 )}
-              </ul>
-            </div>
-
-            {/* STRICT ANTI-CHEAT & TAB SWITCH WARNING (English & Bangla) */}
-            <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/40 border-2 border-red-300 dark:border-red-900/60 space-y-2 text-red-900 dark:text-red-200">
-              <div className="flex items-center gap-2 font-black text-xs sm:text-sm text-red-600 dark:text-light-red">
-                <ShieldAlert className="w-5 h-5 shrink-0" />
-                <span>EXAM INTEGRITY & SECURITY WARNING / পরীক্ষার কঠোর সতর্কতা</span>
               </div>
-              <p className="text-xs leading-relaxed font-semibold">
-                • <strong>Warning:</strong> Switching between tabs, minimizing your browser, or leaving this page during the exam will be recorded and may <strong>reset or automatically submit</strong> your paper!
-              </p>
-              <p className="text-xs leading-relaxed font-semibold text-red-800 dark:text-red-300 pt-1 border-t border-red-200/60 dark:border-red-900/60">
-                • <strong>সতর্কতা:</strong> পরীক্ষার সময় অন্য কোনো ট্যাব ওপেন করলে, ব্রাউজার মিনিমাইজ করলে বা অন্য অ্যাপে সুইচ করলে পরীক্ষা বাতিল/রিসেট হয়ে যাবে এবং আপনাকে পুনরায় শুরু করতে হবে।
-              </p>
-              <p className="text-[11px] text-red-700 dark:text-red-400 font-medium">
-                • Ensure a stable internet connection. If a timer is running, the paper will automatically submit when time expires.
-              </p>
+            )}
+
+            {/* Sleek Anti-Cheat Security Notice */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-3 text-amber-900 dark:text-amber-200">
+              <ShieldAlert className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-0.5">
+                <div className="font-extrabold text-amber-700 dark:text-amber-400">
+                  Tab-Switch Monitoring Active (কঠোর সতর্কতা)
+                </div>
+                <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Please stay on this tab during the test. Switching apps or tabs is recorded and will auto-submit or reset your exam.
+                </p>
+              </div>
             </div>
 
-            {/* Student Identification Form */}
-            <div className="space-y-4 pt-2">
+            {/* Student Verification Form (NO Class / College / School) */}
+            <div className="space-y-3.5 pt-1">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                  Student Verification Information
+                <label className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Student Verification
                 </label>
                 {rememberedProfile && (
                   <button
                     type="button"
                     onClick={handleUseRememberedProfile}
-                    className="text-[11px] text-amber-600 dark:text-amber-400 font-bold hover:underline inline-flex items-center gap-1"
+                    className="text-[11px] text-amber-500 font-bold hover:underline inline-flex items-center gap-1"
                   >
                     <Sparkles className="w-3 h-3" />
                     <span>Auto-fill: {rememberedProfile.name}</span>
@@ -668,50 +730,35 @@ export const StudentExamPortal: React.FC = () => {
                   required
                   value={studentName}
                   onChange={(e) => setStudentName(e.target.value)}
-                  placeholder="e.g. Tanzim Ahmed"
-                  className="w-full px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500"
+                  placeholder="Enter your full name (e.g. Tanzim Ahmed)"
+                  className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Mobile Phone Number *
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={studentMobile}
-                    onChange={(e) => setStudentMobile(e.target.value)}
-                    placeholder="01XXXXXXXXX"
-                    className="w-full px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500"
-                  />
-                  <span className="text-[10px] text-slate-400 block mt-0.5">
-                    Used to link your exam score to your student profile
-                  </span>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Class / College / School (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={studentClass}
-                    onChange={(e) => setStudentClass(e.target.value)}
-                    placeholder="e.g. HSC 2027 / DRMC"
-                    className="w-full px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Mobile Phone Number *
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={studentMobile}
+                  onChange={(e) => setStudentMobile(e.target.value)}
+                  placeholder="01XXXXXXXXX"
+                  className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono tracking-wider"
+                />
+                <span className="text-[11px] text-slate-400 block mt-1">
+                  Used to link your score to your report card & leaderboard
+                </span>
               </div>
             </div>
 
             {/* Start Button */}
             <button
               onClick={handleStartExam}
-              className="w-full py-3.5 rounded-2xl text-sm font-black bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-lg shadow-amber-500/25 transition-transform active:scale-[0.99] flex items-center justify-center gap-2"
+              className="w-full py-3.5 rounded-2xl text-sm font-black bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 shadow-lg shadow-amber-500/25 transition-all active:scale-[0.99] flex items-center justify-center gap-2"
             >
-              <span>I Understand the Rules — Start Exam</span>
+              <span>Start Exam {exam.durationMinutes > 0 ? `(${exam.durationMinutes} Mins)` : ''}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import {
   Batch,
   BatchMonthlyGoal,
@@ -196,49 +196,35 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(false);
   const [lastCloudSyncStatus, setLastCloudSyncStatus] = useState<CloudSyncStatus | null>(null);
 
-  // Sync to local storage whenever state changes (keeps offline cache always up to date)
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'schools', JSON.stringify(schools));
-  }, [schools]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'batches', JSON.stringify(batches));
-  }, [batches]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'students', JSON.stringify(students));
-  }, [students]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'syllabi', JSON.stringify(syllabi));
-  }, [syllabi]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'syllabusSchemes', JSON.stringify(syllabusSchemes));
-  }, [syllabusSchemes]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'sessions', JSON.stringify(sessions));
-  }, [sessions]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'homeworks', JSON.stringify(homeworks));
-  }, [homeworks]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'exams', JSON.stringify(exams));
-  }, [exams]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'sheets', JSON.stringify(sheets));
-  }, [sheets]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'bonusLogs', JSON.stringify(bonusLogs));
-  }, [bonusLogs]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'classGoals', JSON.stringify(classGoals));
-  }, [classGoals]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'onlineExams', JSON.stringify(onlineExams));
-  }, [onlineExams]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'examSubmissions', JSON.stringify(examSubmissions));
-  }, [examSubmissions]);
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_PREFIX + 'settings', JSON.stringify(settings));
-  }, [settings]);
+  // Debounced sync to local storage (unblocks main thread during initial load & Firebase snapshots)
+  const debounceTimers = useRef<Record<string, any>>({});
+  const saveLocalDebounced = (key: string, data: any) => {
+    if (debounceTimers.current[key]) {
+      clearTimeout(debounceTimers.current[key]);
+    }
+    debounceTimers.current[key] = setTimeout(() => {
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(data));
+      } catch {
+        // Storage quota protection
+      }
+    }, 350);
+  };
+
+  useEffect(() => { saveLocalDebounced('schools', schools); }, [schools]);
+  useEffect(() => { saveLocalDebounced('batches', batches); }, [batches]);
+  useEffect(() => { saveLocalDebounced('students', students); }, [students]);
+  useEffect(() => { saveLocalDebounced('syllabi', syllabi); }, [syllabi]);
+  useEffect(() => { saveLocalDebounced('syllabusSchemes', syllabusSchemes); }, [syllabusSchemes]);
+  useEffect(() => { saveLocalDebounced('sessions', sessions); }, [sessions]);
+  useEffect(() => { saveLocalDebounced('homeworks', homeworks); }, [homeworks]);
+  useEffect(() => { saveLocalDebounced('exams', exams); }, [exams]);
+  useEffect(() => { saveLocalDebounced('sheets', sheets); }, [sheets]);
+  useEffect(() => { saveLocalDebounced('bonusLogs', bonusLogs); }, [bonusLogs]);
+  useEffect(() => { saveLocalDebounced('classGoals', classGoals); }, [classGoals]);
+  useEffect(() => { saveLocalDebounced('onlineExams', onlineExams); }, [onlineExams]);
+  useEffect(() => { saveLocalDebounced('examSubmissions', examSubmissions); }, [examSubmissions]);
+  useEffect(() => { saveLocalDebounced('settings', settings); }, [settings]);
 
   // Safe bidirectional merge helper: ensures local data (e.g. offline/live entries) is NEVER overwritten or lost
   const mergeCollections = <T extends { id: string }>(localList: T[], remoteList: T[]): T[] => {
