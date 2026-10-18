@@ -38,7 +38,7 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
   onEditSession,
   onConductNewClass,
 }) => {
-  const { sessions, batches, students, deleteClassSession } = useData();
+  const { sessions, batches, students, schools, deleteClassSession } = useData();
   const { confirm, alert } = useModal();
 
   const [filterBatchId, setFilterBatchId] = useState<string>('all');
@@ -145,10 +145,28 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
       }
     }
 
-    if (sess.assignedHomework?.hasHomework) {
+    const hwList =
+      sess.assignedHomeworks && sess.assignedHomeworks.length > 0
+        ? sess.assignedHomeworks
+        : sess.assignedHomework?.hasHomework
+        ? [sess.assignedHomework]
+        : [];
+
+    if (hwList.length > 0) {
       text += `\n📚 *Homework Assigned:*\n`;
-      text += `• ${sess.assignedHomework.title}\n`;
-      text += `• Due Date: ${sess.assignedHomework.dueDate}\n`;
+      hwList.forEach((hw, idx) => {
+        const scNames =
+          hw.targetType === 'specific_schools' && hw.targetSchoolIds && hw.targetSchoolIds.length > 0
+            ? hw.targetSchoolIds
+                .map((id) => schools.find((s) => s.id === id)?.name || 'School')
+                .join(', ')
+            : 'All Schools';
+        text += `• *Task ${idx + 1} (${scNames}):* ${hw.title}\n`;
+        text += `  📅 Due Date: ${hw.dueDate}\n`;
+        if (hw.description) {
+          text += `  📝 Note: ${hw.description}\n`;
+        }
+      });
     }
 
     text += `\n👥 *Attendance Breakdown:*\n`;
@@ -395,7 +413,9 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
                 </div>
 
                 {/* Badges for In-Class Quiz & Homework Assigned */}
-                {(sess.inClassExam?.hasExam || sess.assignedHomework?.hasHomework) && (
+                {(sess.inClassExam?.hasExam ||
+                  sess.assignedHomework?.hasHomework ||
+                  (sess.assignedHomeworks && sess.assignedHomeworks.length > 0)) && (
                   <div className="flex flex-wrap items-center gap-2 pt-0.5">
                     {sess.inClassExam?.hasExam && (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-radiant-yellow/15 text-amber-900 dark:text-radiant-yellow border border-radiant-yellow/30">
@@ -404,12 +424,33 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
                       </span>
                     )}
 
-                    {sess.assignedHomework?.hasHomework && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-light-indigo/15 text-light-indigo dark:text-spiro-disco-ball border border-light-indigo/30">
-                        <BookOpenCheck className="w-3.5 h-3.5" />
-                        <span>HW Due: {sess.assignedHomework.dueDate} ({sess.assignedHomework.title})</span>
-                      </span>
-                    )}
+                    {(() => {
+                      const hwList =
+                        sess.assignedHomeworks && sess.assignedHomeworks.length > 0
+                          ? sess.assignedHomeworks
+                          : sess.assignedHomework?.hasHomework
+                          ? [sess.assignedHomework]
+                          : [];
+
+                      return hwList.map((hw, hIdx) => {
+                        const scNames =
+                          hw.targetType === 'specific_schools' && hw.targetSchoolIds && hw.targetSchoolIds.length > 0
+                            ? hw.targetSchoolIds
+                                .map((id) => schools.find((s) => s.id === id)?.name || 'School')
+                                .join(', ')
+                            : 'All Schools';
+
+                        return (
+                          <span
+                            key={hIdx}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-light-indigo/15 text-light-indigo dark:text-spiro-disco-ball border border-light-indigo/30"
+                          >
+                            <BookOpenCheck className="w-3.5 h-3.5" />
+                            <span>HW Due: {hw.dueDate} ({hw.title} • {scNames})</span>
+                          </span>
+                        );
+                      });
+                    })()}
                   </div>
                 )}
 
@@ -490,6 +531,57 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Session Assigned Homeworks Banner */}
+            {(() => {
+              const hwList =
+                inspectingSession.assignedHomeworks && inspectingSession.assignedHomeworks.length > 0
+                  ? inspectingSession.assignedHomeworks
+                  : inspectingSession.assignedHomework?.hasHomework
+                  ? [inspectingSession.assignedHomework]
+                  : [];
+
+              if (hwList.length === 0) return null;
+
+              return (
+                <div className="px-5 pt-3">
+                  <div className="p-3 rounded-xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900/50 space-y-1.5">
+                    <span className="text-[11px] font-bold uppercase text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                      <BookOpenCheck className="w-3.5 h-3.5" />
+                      <span>Homework Tasks Assigned in this Session ({hwList.length}):</span>
+                    </span>
+                    <div className="space-y-1">
+                      {hwList.map((hw, hIdx) => {
+                        const scNames =
+                          hw.targetType === 'specific_schools' && hw.targetSchoolIds && hw.targetSchoolIds.length > 0
+                            ? hw.targetSchoolIds
+                                .map((id) => schools.find((s) => s.id === id)?.name || 'School')
+                                .join(', ')
+                            : 'Entire Batch';
+                        return (
+                          <div
+                            key={hIdx}
+                            className="text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-slate-800 dark:text-slate-200 font-medium"
+                          >
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className="font-black text-purple-900 dark:text-purple-200">
+                                {hw.title}
+                              </span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300">
+                                {scNames}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-slate-500 font-semibold shrink-0">
+                              Due: {hw.dueDate}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="p-5 max-h-[60vh] overflow-y-auto space-y-2">
               {Object.keys(inspectingSession.records || {}).length === 0 ? (

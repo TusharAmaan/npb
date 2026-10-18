@@ -35,9 +35,17 @@ import {
   RefreshCw,
   Eye,
   Sliders,
-  Send,
   BookOpen,
 } from 'lucide-react';
+
+// Robust helper to get the student-facing public exam URL
+// Correctly includes repository subpath on GitHub Pages (e.g. /NPB/) as well as localhost
+export function getExamPublicUrl(examCode: string): string {
+  const origin = window.location.origin;
+  const pathname = window.location.pathname.replace(/\/index\.html$/, '').replace(/\/+$/, '');
+  const base = `${origin}${pathname}`;
+  return `${base}/#/exam/${encodeURIComponent(examCode.trim())}`;
+}
 
 export const OnlineExamManager: React.FC = () => {
   const {
@@ -334,8 +342,7 @@ export const OnlineExamManager: React.FC = () => {
 
   // Copy Direct Link
   const handleCopyLink = (exam: OnlineExam) => {
-    const origin = window.location.origin;
-    const url = `${origin}/#/exam/${exam.examCode}`;
+    const url = getExamPublicUrl(exam.examCode);
     navigator.clipboard.writeText(url);
     setCopiedLink(exam.id);
     setTimeout(() => setCopiedLink(null), 2500);
@@ -343,8 +350,7 @@ export const OnlineExamManager: React.FC = () => {
 
   // Copy 1-Click WhatsApp Invite
   const handleCopyWhatsAppInvite = (exam: OnlineExam) => {
-    const origin = window.location.origin;
-    const url = `${origin}/#/exam/${exam.examCode}`;
+    const url = getExamPublicUrl(exam.examCode);
     const batchNames = batches
       .filter((b) => exam.batchIds.includes(b.id))
       .map((b) => b.name)
@@ -497,8 +503,7 @@ _Best of luck with your preparation!_`;
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredExams.map((exam) => {
                 const subCount = examSubmissions.filter((s) => s.examId === exam.id).length;
-                const origin = window.location.origin;
-                const examUrl = `${origin}/#/exam/${exam.examCode}`;
+                const examUrl = getExamPublicUrl(exam.examCode);
 
                 return (
                   <div
@@ -590,11 +595,31 @@ _Best of luck with your preparation!_`;
                         </div>
                       </div>
 
+                      {/* Direct Clickable URL Display */}
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <ExternalLink className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span className="font-mono text-[11px] text-slate-600 dark:text-slate-300 truncate select-all">
+                            {examUrl}
+                          </span>
+                        </div>
+                        <a
+                          href={examUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline shrink-0"
+                        >
+                          Open View ↗
+                        </a>
+                      </div>
+
                       {/* Share Controls Strip */}
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
                         <button
+                          type="button"
                           onClick={() => handleCopyWhatsAppInvite(exam)}
-                          className="flex-1 py-1.5 rounded-xl text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs flex items-center justify-center gap-1.5 transition-colors"
+                          className="flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs flex items-center justify-center gap-1.5 transition-colors"
+                          title="Copy Complete WhatsApp Announcement to Clipboard"
                         >
                           {copiedLink === `wa-${exam.id}` ? (
                             <>
@@ -610,18 +635,20 @@ _Best of luck with your preparation!_`;
                         </button>
 
                         <button
+                          type="button"
                           onClick={() => handleCopyLink(exam)}
-                          className="px-3 py-1.5 rounded-xl text-[11px] font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center gap-1"
+                          className="py-2 px-3 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 flex items-center gap-1.5 transition-colors shadow-2xs"
+                          title="Copy Direct Link to Clipboard"
                         >
                           {copiedLink === exam.id ? (
                             <>
-                              <Check className="w-3.5 h-3.5 text-weird-green" />
-                              <span className="text-weird-green">Copied</span>
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                              <span>Link Copied!</span>
                             </>
                           ) : (
                             <>
                               <Copy className="w-3.5 h-3.5" />
-                              <span>Short Link</span>
+                              <span>Copy Link</span>
                             </>
                           )}
                         </button>
@@ -629,11 +656,12 @@ _Best of luck with your preparation!_`;
                         <a
                           href={examUrl}
                           target="_blank"
-                          rel="noreferrer"
-                          className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-white"
-                          title="Open Student Exam Portal"
+                          rel="noopener noreferrer"
+                          className="py-2 px-3.5 rounded-xl text-xs font-black bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 flex items-center gap-1.5 shadow-2xs shrink-0 transition-all"
+                          title="Open and preview the student exam portal in a new tab"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Open Exam ↗</span>
                         </a>
                       </div>
                     </div>
@@ -979,17 +1007,63 @@ _Best of luck with your preparation!_`;
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                      Short Exam Code *
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Short Exam Code *
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const code = `EXAM-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+                          setFormCode(code);
+                        }}
+                        className="text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:underline"
+                      >
+                        ⚡ Generate Code
+                      </button>
+                    </div>
                     <input
                       type="text"
                       required
                       value={formCode}
-                      onChange={(e) => setFormCode(e.target.value)}
+                      onChange={(e) => setFormCode(e.target.value.replace(/\s+/g, '-').toUpperCase())}
                       placeholder="e.g. ENG-SSC-01"
                       className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white uppercase font-mono"
                     />
+
+                    {/* Live Student URL Preview in modal */}
+                    <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 block uppercase">
+                          Student Exam Link Preview:
+                        </span>
+                        <code className="text-[11px] font-mono font-bold text-slate-800 dark:text-slate-200 truncate block select-all">
+                          {getExamPublicUrl(formCode.trim() || 'EXAM-CODE')}
+                        </code>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (formCode.trim()) {
+                              navigator.clipboard.writeText(getExamPublicUrl(formCode.trim()));
+                            }
+                          }}
+                          disabled={!formCode.trim()}
+                          className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-500 text-slate-950 hover:bg-amber-600 disabled:opacity-40"
+                        >
+                          Copy Link
+                        </button>
+                        <a
+                          href={getExamPublicUrl(formCode.trim() || 'TEST')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:opacity-90 inline-flex items-center gap-1"
+                        >
+                          <span>Test View ↗</span>
+                        </a>
+                      </div>
+                    </div>
                   </div>
                 </div>
 

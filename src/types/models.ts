@@ -184,6 +184,7 @@ export interface ClassSession {
   records: Record<string, StudentSessionRecord>; // Keyed by studentId
   inClassExam?: InClassExamDetail;
   assignedHomework?: AssignedHomeworkDetail;
+  assignedHomeworks?: AssignedHomeworkDetail[]; // Multi-homework support for school-differentiated tasks
   distributedSheetIds?: string[]; // Lecture sheet IDs handed over during this session
   nextClassLessonPlan?: string; // Reminder plan for upcoming class
   createdAt: number;

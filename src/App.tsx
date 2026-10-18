@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   HashRouter as Router,
   Routes,
@@ -6,6 +6,7 @@ import {
   Navigate,
   Outlet,
   useLocation,
+  useNavigate,
 } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -36,6 +37,37 @@ import { AdminLogin } from './components/auth/AdminLogin';
 import { ClassGoalsManager } from './components/goals/ClassGoalsManager';
 import { StudentExamPortal } from './components/exams/online/StudentExamPortal';
 import { OnlineExamManager } from './components/exams/online/OnlineExamManager';
+
+// Catch any GitHub Pages SPA query redirects (?/exam/... or ?exam=...)
+const SpaRedirectHandler: React.FC = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const search = window.location.search;
+    if (!search) return;
+
+    let route = '';
+    if (search.startsWith('?/')) {
+      route = search.slice(2);
+    } else if (search.startsWith('?p=')) {
+      route = decodeURIComponent(search.slice(3)).replace(/^\/+/, '');
+    } else {
+      const params = new URLSearchParams(search);
+      const examCode = params.get('exam');
+      if (examCode) {
+        route = `exam/${encodeURIComponent(examCode)}`;
+      }
+    }
+
+    if (route) {
+      const cleanUrl = window.location.pathname + '#/' + route;
+      window.history.replaceState(null, '', cleanUrl);
+      navigate('/' + route, { replace: true });
+    }
+  }, [navigate]);
+
+  return null;
+};
 
 // Admin Layout Shell
 const AdminLayout: React.FC = () => {
@@ -77,6 +109,7 @@ export function App() {
         <DataProvider>
           <ModalProvider>
             <Router>
+              <SpaRedirectHandler />
               <Routes>
                 {/* Public Dedicated Homepage */}
                 <Route path="/" element={<HomeLandingView />} />

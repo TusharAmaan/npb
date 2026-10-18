@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useData } from '../../context/DataContext';
 import {
@@ -9,6 +9,9 @@ import {
   InClassExamDetail,
   AssignedHomeworkDetail,
   Student,
+  Homework,
+  HomeworkStatus,
+  HomeworkSubmission,
 } from '../../types/models';
 import { createWhatsAppLink, WhatsAppTemplates } from '../../lib/whatsappTemplates';
 import {
@@ -16,6 +19,7 @@ import {
   Calendar,
   CheckCheck,
   Save,
+  Edit2,
   Clock,
   Sparkles,
   PhoneCall,
@@ -42,6 +46,13 @@ import {
   BookOpen,
   Search,
   X,
+  CheckCircle2,
+  XCircle,
+  Plus,
+  Trash2,
+  Sliders,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { MasterSyllabusSelector } from './MasterSyllabusSelector';
 import { ClassRecordsView } from './ClassRecordsView';
@@ -51,6 +62,50 @@ interface LiveClassSessionProps {
 }
 
 const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export interface SessionHomeworkDraft {
+  id: string;
+  homeworkId?: string;
+  title: string;
+  dueDate: string;
+  description: string;
+  schemeId: string;
+  relatedTopics: string[];
+  customTopicsList: string[];
+  customTopicInput: string;
+  targetType: 'whole_batch' | 'specific_schools';
+  targetSchoolIds: string[];
+  gradingMode: 'status_only' | 'status_and_marks';
+  maxMarks: number;
+}
+
+export function calculateNextRoutineDate(currentDateStr: string, routine?: { dayOfWeek: number }[]): string {
+  try {
+    const cur = new Date(currentDateStr);
+    if (!routine || routine.length === 0) {
+      const d = new Date(cur);
+      d.setDate(d.getDate() + 3);
+      return d.toISOString().split('T')[0];
+    }
+    const curDay = cur.getDay();
+    const routineDays = Array.from(new Set(routine.map((r) => r.dayOfWeek))).sort((a, b) => a - b);
+    let nextDay = routineDays.find((d) => d > curDay);
+    let daysAhead = 0;
+    if (nextDay !== undefined) {
+      daysAhead = nextDay - curDay;
+    } else {
+      nextDay = routineDays[0];
+      daysAhead = 7 - curDay + nextDay;
+    }
+    const nextDate = new Date(cur);
+    nextDate.setDate(nextDate.getDate() + (daysAhead || 7));
+    return nextDate.toISOString().split('T')[0];
+  } catch {
+    const d = new Date();
+    d.setDate(d.getDate() + 3);
+    return d.toISOString().split('T')[0];
+  }
+}
 
 export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab = 'conduct' }) => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -67,6 +122,8 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
     syllabusSchemes,
     saveClassSession,
     toggleSheetDistributed,
+    saveHomeworkSubmission,
+    bulkUpdateHomeworkSubmissions,
   } = useData();
 
   // Tab state: 'conduct' (live recording) or 'records' (history archive)
@@ -131,29 +188,39 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
   const [examTitle, setExamTitle] = useState<string>('In-Class Pop Quiz');
   const [examMaxMarks, setExamMaxMarks] = useState<number>(10);
 
-  // Assigned Homework states
+  // Assigned Homework states (Multi-task, school-differentiated drafts)
   const [hasAssignedHomework, setHasAssignedHomework] = useState<boolean>(false);
-  const [homeworkTitle, setHomeworkTitle] = useState<string>('');
-  const [homeworkDueDate, setHomeworkDueDate] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 3);
-    return d.toISOString().split('T')[0];
+  const [homeworkTasks, setHomeworkTasks] = useState<SessionHomeworkDraft[]>([]);
+
+  // Helper to create a new blank homework task draft
+  const createBlankHomeworkDraft = (
+    dueDate: string,
+    targetType: 'whole_batch' | 'specific_schools' = 'whole_batch',
+    targetSchoolIds: string[] = []
+  ): SessionHomeworkDraft => ({
+    id: `hw-task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    title: '',
+    dueDate,
+    description: '',
+    schemeId: '',
+    relatedTopics: [],
+    customTopicsList: [],
+    customTopicInput: '',
+    targetType,
+    targetSchoolIds,
+    gradingMode: 'status_only',
+    maxMarks: 10,
   });
-  const [homeworkDescription, setHomeworkDescription] = useState<string>('');
-  const [homeworkSchemeId, setHomeworkSchemeId] = useState<string>('');
-  const [homeworkSelectedTopics, setHomeworkSelectedTopics] = useState<string[]>([]);
-  const [homeworkCustomTopic, setHomeworkCustomTopic] = useState<string>('');
-  const [homeworkCustomTopicsList, setHomeworkCustomTopicsList] = useState<string[]>([]);
-  const [homeworkGradingMode, setHomeworkGradingMode] = useState<'status_only' | 'status_and_marks'>('status_only');
-  const [homeworkMaxMarks, setHomeworkMaxMarks] = useState<number>(10);
-  const [homeworkTargetType, setHomeworkTargetType] = useState<'whole_batch' | 'specific_schools' | 'specific_students'>('whole_batch');
-  const [homeworkTargetSchoolIds, setHomeworkTargetSchoolIds] = useState<string[]>([]);
 
   // Distributed lecture sheet states
   const [distributedSheetIds, setDistributedSheetIds] = useState<string[]>([]);
 
   // Next class lesson plan memo
   const [nextClassLessonPlan, setNextClassLessonPlan] = useState<string>('');
+
+  // Explicit session edit tracking (prevents date change from wiping data or creating duplicate entry)
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [originalSessionDate, setOriginalSessionDate] = useState<string | null>(null);
 
   // Feedback states
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
@@ -194,9 +261,127 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
     [sheets, selectedBatchId]
   );
 
+  // Homeworks due for today's class (from previous session or due today)
+  const previousClassHomeworks = useMemo(() => {
+    if (!activeBatch) return [];
+
+    const pastSessions = sessions
+      .filter((s) => s.batchId === activeBatch.id && s.date < sessionDate)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    const lastSession = pastSessions[0];
+
+    const matchingHws = homeworks.filter((h) => {
+      if (h.batchId !== activeBatch.id) return false;
+      // Attached to last session
+      if (lastSession && (h.sessionId === lastSession.id || h.assignedDate === lastSession.date)) return true;
+      // Due today
+      if (h.dueDate === sessionDate) return true;
+      // Or assigned in the past, due on or before sessionDate with pending submissions
+      if (h.assignedDate <= sessionDate) {
+        const hasPending = enrolledStudents.some((stu) => {
+          const isTargeted =
+            h.targetType === 'whole_batch' ||
+            (h.targetType === 'specific_schools' && h.targetSchoolIds?.includes(stu.schoolId));
+          if (!isTargeted) return false;
+          const sub = h.submissions?.[stu.id];
+          return !sub || sub.status === 'pending';
+        });
+        if (hasPending) return true;
+      }
+      return false;
+    });
+
+    const map = new Map<string, Homework>();
+    matchingHws.forEach((h) => map.set(h.id, h));
+    return Array.from(map.values()).sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''));
+  }, [homeworks, activeBatch, sessions, sessionDate, enrolledStudents]);
+
+  // Actions for Homework Assignment in Class
+  const handleSplitHomeworkBySchool = () => {
+    const nextDueDate = calculateNextRoutineDate(sessionDate, activeBatch?.weeklyRoutine);
+    if (batchSchools.length === 0) {
+      setHomeworkTasks([createBlankHomeworkDraft(nextDueDate, 'whole_batch')]);
+      setHasAssignedHomework(true);
+      return;
+    }
+    const drafts: SessionHomeworkDraft[] = batchSchools.map((sc, idx) => ({
+      id: `hw-task-${Date.now()}-${idx}`,
+      title: '',
+      dueDate: nextDueDate,
+      description: '',
+      schemeId: '',
+      relatedTopics: [],
+      customTopicsList: [],
+      customTopicInput: '',
+      targetType: 'specific_schools',
+      targetSchoolIds: [sc.id],
+      gradingMode: 'status_only',
+      maxMarks: 10,
+    }));
+    setHomeworkTasks(drafts);
+    setHasAssignedHomework(true);
+  };
+
+  const handleAddHomeworkTask = () => {
+    const nextDueDate = calculateNextRoutineDate(sessionDate, activeBatch?.weeklyRoutine);
+    const assignedSchoolIds = new Set(
+      homeworkTasks.flatMap((t) => (t.targetType === 'specific_schools' ? t.targetSchoolIds : []))
+    );
+    const remainingSchools = batchSchools.filter((sc) => !assignedSchoolIds.has(sc.id));
+    const newDraft = createBlankHomeworkDraft(
+      nextDueDate,
+      remainingSchools.length > 0 ? 'specific_schools' : 'whole_batch',
+      remainingSchools.length > 0 ? [remainingSchools[0].id] : []
+    );
+    setHomeworkTasks((prev) => [...prev, newDraft]);
+  };
+
+  const handleUpdateStudentHomework = async (
+    hwId: string,
+    studentId: string,
+    status: HomeworkStatus,
+    obtainedMarks?: number
+  ) => {
+    const hw = homeworks.find((h) => h.id === hwId);
+    const existing = hw?.submissions?.[studentId] || { studentId, status: 'pending' };
+    const updated: HomeworkSubmission = {
+      ...existing,
+      status,
+      obtainedMarks: obtainedMarks !== undefined ? obtainedMarks : existing.obtainedMarks,
+      checkedAt: Date.now(),
+    };
+    await saveHomeworkSubmission(hwId, studentId, updated);
+  };
+
+  const handleBulkMarkHomeworkDone = async (hwId: string, schoolId?: string) => {
+    const hw = homeworks.find((h) => h.id === hwId);
+    if (!hw) return;
+    const targetStus = enrolledStudents.filter((s) => {
+      if (schoolId) return s.schoolId === schoolId;
+      if (hw.targetType === 'specific_schools') return hw.targetSchoolIds?.includes(s.schoolId);
+      return true;
+    });
+    const updates: Record<string, HomeworkSubmission> = {};
+    targetStus.forEach((stu) => {
+      updates[stu.id] = {
+        studentId: stu.id,
+        status: 'done',
+        obtainedMarks: hw.maxMarks,
+        checkedAt: Date.now(),
+      };
+    });
+    await bulkUpdateHomeworkSubmissions(hwId, updates);
+  };
+
   // Initialize or load session records when batch or date changes
   useEffect(() => {
     if (!activeBatch) return;
+
+    // If user is actively editing an existing session, DO NOT wipe/reload form fields
+    // when they change the date input to correct the date!
+    if (editingSessionId) {
+      return;
+    }
 
     // Check if a session already exists for this batch and date
     const existing = sessions.find(
@@ -222,23 +407,48 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
       }
 
       setDistributedSheetIds(existing.distributedSheetIds || []);
-      if (existing.assignedHomework?.hasHomework) {
+
+      if (existing.assignedHomeworks && existing.assignedHomeworks.length > 0) {
         setHasAssignedHomework(true);
-        setHomeworkTitle(existing.assignedHomework.title || '');
-        setHomeworkDueDate(existing.assignedHomework.dueDate || '');
-        setHomeworkDescription(existing.assignedHomework.description || '');
-        setHomeworkSchemeId(existing.assignedHomework.schemeId || '');
-        setHomeworkSelectedTopics(existing.assignedHomework.relatedTopics || []);
-        setHomeworkCustomTopicsList(existing.assignedHomework.outOfSyllabusTopics || []);
-        setHomeworkGradingMode(existing.assignedHomework.gradingMode || 'status_only');
-        setHomeworkMaxMarks(existing.assignedHomework.maxMarks || 10);
-        setHomeworkTargetType(existing.assignedHomework.targetType || 'whole_batch');
-        setHomeworkTargetSchoolIds(existing.assignedHomework.targetSchoolIds || []);
+        setHomeworkTasks(
+          existing.assignedHomeworks.map((h, i) => ({
+            id: `task-existing-${i}-${Date.now()}`,
+            homeworkId: h.homeworkId,
+            title: h.title,
+            dueDate: h.dueDate,
+            description: h.description || '',
+            schemeId: h.schemeId || '',
+            relatedTopics: h.relatedTopics || [],
+            customTopicsList: h.outOfSyllabusTopics || [],
+            customTopicInput: '',
+            targetType: (h.targetType as any) || 'whole_batch',
+            targetSchoolIds: h.targetSchoolIds || [],
+            gradingMode: h.gradingMode || 'status_only',
+            maxMarks: h.maxMarks || 10,
+          }))
+        );
+      } else if (existing.assignedHomework?.hasHomework) {
+        setHasAssignedHomework(true);
+        setHomeworkTasks([
+          {
+            id: `task-existing-0-${Date.now()}`,
+            homeworkId: existing.assignedHomework.homeworkId,
+            title: existing.assignedHomework.title,
+            dueDate: existing.assignedHomework.dueDate,
+            description: existing.assignedHomework.description || '',
+            schemeId: existing.assignedHomework.schemeId || '',
+            relatedTopics: existing.assignedHomework.relatedTopics || [],
+            customTopicsList: existing.assignedHomework.outOfSyllabusTopics || [],
+            customTopicInput: '',
+            targetType: (existing.assignedHomework.targetType as any) || 'whole_batch',
+            targetSchoolIds: existing.assignedHomework.targetSchoolIds || [],
+            gradingMode: existing.assignedHomework.gradingMode || 'status_only',
+            maxMarks: existing.assignedHomework.maxMarks || 10,
+          },
+        ]);
       } else {
         setHasAssignedHomework(false);
-        setHomeworkTitle('');
-        setHomeworkSelectedTopics([]);
-        setHomeworkCustomTopicsList([]);
+        setHomeworkTasks([]);
       }
     } else {
       // Default all enrolled students to 'present'
@@ -258,9 +468,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
       setDistributedSheetIds([]);
       setHasInClassExam(false);
       setHasAssignedHomework(false);
-      setHomeworkTitle('');
-      setHomeworkSelectedTopics([]);
-      setHomeworkCustomTopicsList([]);
+      setHomeworkTasks([]);
       setNextClassLessonPlan('');
       setCustomTitle('');
 
@@ -295,11 +503,44 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
           setExamTitle(targetSession.inClassExam.title);
           setExamMaxMarks(targetSession.inClassExam.maxMarks);
         }
-        if (targetSession.assignedHomework?.hasHomework) {
+        if (targetSession.assignedHomeworks && targetSession.assignedHomeworks.length > 0) {
           setHasAssignedHomework(true);
-          setHomeworkTitle(targetSession.assignedHomework.title);
-          setHomeworkDueDate(targetSession.assignedHomework.dueDate);
-          setHomeworkDescription(targetSession.assignedHomework.description || '');
+          setHomeworkTasks(
+            targetSession.assignedHomeworks.map((h, i) => ({
+              id: `task-param-${i}-${Date.now()}`,
+              homeworkId: h.homeworkId,
+              title: h.title,
+              dueDate: h.dueDate,
+              description: h.description || '',
+              schemeId: h.schemeId || '',
+              relatedTopics: h.relatedTopics || [],
+              customTopicsList: h.outOfSyllabusTopics || [],
+              customTopicInput: '',
+              targetType: (h.targetType as any) || 'whole_batch',
+              targetSchoolIds: h.targetSchoolIds || [],
+              gradingMode: h.gradingMode || 'status_only',
+              maxMarks: h.maxMarks || 10,
+            }))
+          );
+        } else if (targetSession.assignedHomework?.hasHomework) {
+          setHasAssignedHomework(true);
+          setHomeworkTasks([
+            {
+              id: `task-param-0-${Date.now()}`,
+              homeworkId: targetSession.assignedHomework.homeworkId,
+              title: targetSession.assignedHomework.title,
+              dueDate: targetSession.assignedHomework.dueDate,
+              description: targetSession.assignedHomework.description || '',
+              schemeId: targetSession.assignedHomework.schemeId || '',
+              relatedTopics: targetSession.assignedHomework.relatedTopics || [],
+              customTopicsList: targetSession.assignedHomework.outOfSyllabusTopics || [],
+              customTopicInput: '',
+              targetType: (targetSession.assignedHomework.targetType as any) || 'whole_batch',
+              targetSchoolIds: targetSession.assignedHomework.targetSchoolIds || [],
+              gradingMode: targetSession.assignedHomework.gradingMode || 'status_only',
+              maxMarks: targetSession.assignedHomework.maxMarks || 10,
+            },
+          ]);
         }
         setActiveTab('conduct');
       }
@@ -376,6 +617,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
     if (!activeBatch) return;
 
     const sessionId = `sess-${activeBatch.id}-${sessionDate}`;
+    const previousId = editingSessionId || undefined;
 
     // Calculate in-class quiz metrics if conducted
     let inClassExamData: InClassExamDetail | undefined = undefined;
@@ -402,25 +644,30 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
       };
     }
 
-    // Assigned homework detail
-    let assignedHwData: AssignedHomeworkDetail | undefined = undefined;
-    if (hasAssignedHomework) {
-      const allHwTopics = [...homeworkSelectedTopics, ...homeworkCustomTopicsList];
-      assignedHwData = {
-        hasHomework: true,
-        homeworkId: `hw-${sessionId}`,
-        title: homeworkTitle.trim() || `Homework for ${sessionDate}`,
-        dueDate: homeworkDueDate,
-        description: homeworkDescription.trim(),
-        relatedTopics: allHwTopics.length > 0 ? allHwTopics : selectedTopics,
-        outOfSyllabusTopics: homeworkCustomTopicsList,
-        schemeId: homeworkSchemeId || undefined,
-        gradingMode: homeworkGradingMode,
-        maxMarks: homeworkGradingMode === 'status_and_marks' ? Number(homeworkMaxMarks) : undefined,
-        targetType: homeworkTargetType,
-        targetSchoolIds: homeworkTargetType === 'specific_schools' ? homeworkTargetSchoolIds : undefined,
-      };
-    }
+    // Assigned homework details (multi-task support)
+    const assignedHomeworksData: AssignedHomeworkDetail[] = hasAssignedHomework
+      ? homeworkTasks
+          .filter((t) => t.title.trim().length > 0)
+          .map((t, idx) => ({
+            hasHomework: true,
+            homeworkId: t.homeworkId || `hw-${sessionId}-${idx + 1}`,
+            title: t.title.trim(),
+            dueDate: t.dueDate,
+            description: t.description.trim(),
+            relatedTopics:
+              [...t.relatedTopics, ...t.customTopicsList].length > 0
+                ? [...t.relatedTopics, ...t.customTopicsList]
+                : selectedTopics,
+            outOfSyllabusTopics: t.customTopicsList,
+            schemeId: t.schemeId || undefined,
+            gradingMode: t.gradingMode,
+            maxMarks: t.gradingMode === 'status_and_marks' ? Number(t.maxMarks) : undefined,
+            targetType: t.targetType,
+            targetSchoolIds: t.targetType === 'specific_schools' ? t.targetSchoolIds : undefined,
+          }))
+      : [];
+
+    const assignedHwData = assignedHomeworksData[0] || undefined;
 
     const newSession: ClassSession = {
       id: sessionId,
@@ -437,12 +684,15 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
       records: attendanceRecords,
       inClassExam: inClassExamData,
       assignedHomework: assignedHwData,
+      assignedHomeworks: assignedHomeworksData,
       distributedSheetIds,
       nextClassLessonPlan: nextClassLessonPlan.trim() || undefined,
       createdAt: Date.now(),
     };
 
-    await saveClassSession(newSession, targetTopicStatus);
+    await saveClassSession(newSession, targetTopicStatus, previousId);
+    setEditingSessionId(null);
+    setOriginalSessionDate(null);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3500);
   };
@@ -477,10 +727,46 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
       text += `• Quiz: ${examTitle} (Marks: /${examMaxMarks})\n`;
     }
 
-    if (hasAssignedHomework) {
-      text += `\n📚 *Homework Assigned:*\n`;
-      text += `• ${homeworkTitle}\n`;
-      text += `• Due Date: ${homeworkDueDate}\n`;
+    if (hasAssignedHomework && homeworkTasks.length > 0) {
+      text += `\n📚 *Homework Assigned for Next Class:*\n`;
+      homeworkTasks.forEach((hw, idx) => {
+        if (!hw.title.trim()) return;
+        const targetSchoolsText =
+          hw.targetType === 'specific_schools' && hw.targetSchoolIds.length > 0
+            ? schools
+                .filter((sc) => hw.targetSchoolIds.includes(sc.id))
+                .map((sc) => sc.name)
+                .join(', ')
+            : 'Entire Batch (All Schools)';
+        text += `• *Task ${idx + 1} (${targetSchoolsText}):* ${hw.title}\n`;
+        text += `  📅 Due Date: ${hw.dueDate}\n`;
+        if (hw.description) text += `  📝 Note: ${hw.description}\n`;
+      });
+    }
+
+    if (previousClassHomeworks.length > 0) {
+      text += `\n📋 *Homework Checked in Today's Class:*\n`;
+      previousClassHomeworks.forEach((hw) => {
+        const eligible = enrolledStudents.filter((stu) => {
+          if (hw.targetType === 'whole_batch') return true;
+          if (hw.targetType === 'specific_schools') return hw.targetSchoolIds?.includes(stu.schoolId);
+          return false;
+        });
+        const done = eligible.filter((s) => {
+          const st = hw.submissions?.[s.id]?.status;
+          return st === 'done' || st === 'late';
+        }).length;
+        const targetName =
+          hw.targetType === 'specific_schools' && hw.targetSchoolIds?.length
+            ? schools
+                .filter((sc) => hw.targetSchoolIds?.includes(sc.id))
+                .map((sc) => sc.name)
+                .join(', ')
+            : 'Batch-Wide';
+        text += `• ${hw.title} [${targetName}]: ${done}/${eligible.length} submitted (${
+          eligible.length > 0 ? Math.round((done / eligible.length) * 100) : 0
+        }%)\n`;
+      });
     }
 
     text += `\n👥 *Attendance Breakdown:*\n`;
@@ -528,8 +814,17 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
     window.open(link, '_blank');
   };
 
+  // Cancel session edit mode
+  const handleCancelEdit = () => {
+    setEditingSessionId(null);
+    setOriginalSessionDate(null);
+    setSessionDate(new Date().toISOString().split('T')[0]);
+  };
+
   // Handle session editing from Records view
   const handleEditSessionFromRecords = (sess: ClassSession) => {
+    setEditingSessionId(sess.id);
+    setOriginalSessionDate(sess.date);
     setSelectedBatchId(sess.batchId);
     setSessionDate(sess.date);
     setSessionType(sess.sessionType);
@@ -545,11 +840,47 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
       setExamTitle(sess.inClassExam.title);
       setExamMaxMarks(sess.inClassExam.maxMarks);
     }
-    if (sess.assignedHomework?.hasHomework) {
+    if (sess.assignedHomeworks && sess.assignedHomeworks.length > 0) {
       setHasAssignedHomework(true);
-      setHomeworkTitle(sess.assignedHomework.title);
-      setHomeworkDueDate(sess.assignedHomework.dueDate);
-      setHomeworkDescription(sess.assignedHomework.description || '');
+      setHomeworkTasks(
+        sess.assignedHomeworks.map((h, i) => ({
+          id: `task-edit-${i}-${Date.now()}`,
+          homeworkId: h.homeworkId,
+          title: h.title,
+          dueDate: h.dueDate,
+          description: h.description || '',
+          schemeId: h.schemeId || '',
+          relatedTopics: h.relatedTopics || [],
+          customTopicsList: h.outOfSyllabusTopics || [],
+          customTopicInput: '',
+          targetType: (h.targetType as any) || 'whole_batch',
+          targetSchoolIds: h.targetSchoolIds || [],
+          gradingMode: h.gradingMode || 'status_only',
+          maxMarks: h.maxMarks || 10,
+        }))
+      );
+    } else if (sess.assignedHomework?.hasHomework) {
+      setHasAssignedHomework(true);
+      setHomeworkTasks([
+        {
+          id: `task-edit-0-${Date.now()}`,
+          homeworkId: sess.assignedHomework.homeworkId,
+          title: sess.assignedHomework.title,
+          dueDate: sess.assignedHomework.dueDate,
+          description: sess.assignedHomework.description || '',
+          schemeId: sess.assignedHomework.schemeId || '',
+          relatedTopics: sess.assignedHomework.relatedTopics || [],
+          customTopicsList: sess.assignedHomework.outOfSyllabusTopics || [],
+          customTopicInput: '',
+          targetType: (sess.assignedHomework.targetType as any) || 'whole_batch',
+          targetSchoolIds: sess.assignedHomework.targetSchoolIds || [],
+          gradingMode: sess.assignedHomework.gradingMode || 'status_only',
+          maxMarks: sess.assignedHomework.maxMarks || 10,
+        },
+      ]);
+    } else {
+      setHasAssignedHomework(false);
+      setHomeworkTasks([]);
     }
     handleSwitchTab('conduct');
   };
@@ -607,11 +938,47 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
       {activeTab === 'records' ? (
         <ClassRecordsView
           onEditSession={handleEditSessionFromRecords}
-          onConductNewClass={() => handleSwitchTab('conduct')}
+          onConductNewClass={() => {
+            setEditingSessionId(null);
+            setOriginalSessionDate(null);
+            handleSwitchTab('conduct');
+          }}
         />
       ) : (
         /* LIVE CLASS SESSION FORM */
         <div className="space-y-5">
+          {/* Active Editing Session Indicator Banner */}
+          {editingSessionId && (
+            <div className="p-4 rounded-2xl bg-amber-500/10 border-2 border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shrink-0 shadow-xs">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-black text-sm text-slate-900 dark:text-white">
+                      Editing Saved Class Record
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300 border border-amber-400 dark:border-amber-700">
+                      Original Date: {originalSessionDate}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                    You can freely correct the class date, routine timeslot, topics, or attendance. Saving will safely update this entry without duplicating it.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="self-end sm:self-auto px-3 py-1.5 rounded-xl text-xs font-bold text-amber-900 dark:text-amber-200 bg-white dark:bg-dark-surface hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-300 dark:border-amber-700 transition-all shadow-2xs"
+              >
+                Cancel Edit (New Session)
+              </button>
+            </div>
+          )}
+
           {/* Hero Control Header */}
           <div className="bg-white dark:bg-dark-surface p-5 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -666,12 +1033,12 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                   {saveSuccess ? (
                     <>
                       <Check className="w-4 h-4 stroke-[3]" />
-                      <span>Saved & Synced!</span>
+                      <span>{editingSessionId ? 'Updated & Synced!' : 'Saved & Synced!'}</span>
                     </>
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      <span>Save Session Record</span>
+                      <span>{editingSessionId ? 'Update Session Record' : 'Save Session Record'}</span>
                     </>
                   )}
                 </button>
@@ -957,14 +1324,25 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
           {/* ASSIGNED HOMEWORK, LECTURE SHEETS & NEXT CLASS PLAN INTEGRATION */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Homework Assignment (Span 2 cols on lg) */}
-            <div className="bg-white dark:bg-dark-surface p-5 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-3 lg:col-span-2">
-              <div className="flex items-center justify-between">
+            <div className="bg-white dark:bg-dark-surface p-5 rounded-2xl border border-slate-200/80 dark:border-dark-border shadow-xs space-y-4 lg:col-span-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <BookOpenCheck className="w-4 h-4 text-radiant-yellow" />
-                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                    Homework Assignment for this Class
-                  </h3>
+                  <BookOpenCheck className="w-5 h-5 text-amber-500" />
+                  <div>
+                    <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white flex items-center gap-2">
+                      <span>Homework Assignment for this Class</span>
+                      {homeworkTasks.length > 0 && hasAssignedHomework && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                          {homeworkTasks.length} {homeworkTasks.length === 1 ? 'Task' : 'Tasks (Differentiated)'}
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Assign homework to the entire batch, or assign different homework to School Y vs School Z.
+                    </p>
+                  </div>
                 </div>
+
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -977,232 +1355,369 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                     <input
                       type="checkbox"
                       checked={hasAssignedHomework}
-                      onChange={(e) => setHasAssignedHomework(e.target.checked)}
-                      className="rounded text-light-indigo focus:ring-light-indigo w-3.5 h-3.5"
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setHasAssignedHomework(checked);
+                        if (checked && homeworkTasks.length === 0) {
+                          const nextDueDate = calculateNextRoutineDate(sessionDate, activeBatch?.weeklyRoutine);
+                          setHomeworkTasks([createBlankHomeworkDraft(nextDueDate)]);
+                        }
+                      }}
+                      className="rounded text-light-indigo focus:ring-light-indigo w-4 h-4"
                     />
-                    <span className="font-bold text-slate-700 dark:text-slate-300">Assign HW</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">Assign HW</span>
                   </label>
                 </div>
               </div>
 
               {hasAssignedHomework ? (
-                <div className="space-y-3 pt-1 animate-in fade-in-50">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <div className="sm:col-span-2">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                        Homework Task Title *
-                      </label>
-                      <input
-                        type="text"
-                        value={homeworkTitle}
-                        onChange={(e) => setHomeworkTitle(e.target.value)}
-                        placeholder="e.g. Modifiers Sheet 04 Exercises 1–25"
-                        className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                        Due Date
-                      </label>
-                      <input
-                        type="date"
-                        value={homeworkDueDate}
-                        onChange={(e) => setHomeworkDueDate(e.target.value)}
-                        className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Instructions & Reference Notes
-                    </label>
-                    <input
-                      type="text"
-                      value={homeworkDescription}
-                      onChange={(e) => setHomeworkDescription(e.target.value)}
-                      placeholder="e.g. Solve exercises 1 to 20 in HW copy; check board question formats."
-                      className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                    />
-                  </div>
-
-                  {/* Syllabus Scheme Link & Topic Picker */}
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                        <BookOpen className="w-3 h-3 text-light-indigo" />
-                        <span>Link to Syllabus Scheme (Optional):</span>
-                      </label>
-                      <select
-                        value={homeworkSchemeId}
-                        onChange={(e) => setHomeworkSchemeId(e.target.value)}
-                        className="px-2 py-1 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                      >
-                        <option value="">No Scheme / Independent Homework</option>
-                        {batchSchemes.map((sch) => (
-                          <option key={sch.id} value={sch.id}>
-                            {sch.title} ({sch.termType.replace('_', ' ').toUpperCase()})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Topic chips from selected scheme */}
-                    {homeworkSchemeId && (
-                      <div className="space-y-1 pt-1">
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          Select Syllabus Topics Tested:
-                        </span>
-                        <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar p-1">
-                          {batchSchemes
-                            .find((s) => s.id === homeworkSchemeId)
-                            ?.topics.map((top) => {
-                              const isChecked = homeworkSelectedTopics.includes(top.title);
-                              return (
-                                <button
-                                  key={top.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setHomeworkSelectedTopics((prev) =>
-                                      isChecked
-                                        ? prev.filter((t) => t !== top.title)
-                                        : [...prev, top.title]
-                                    );
-                                  }}
-                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all ${
-                                    isChecked
-                                      ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
-                                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                                  }`}
-                                >
-                                  {top.title}
-                                </button>
-                              );
-                            })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Out of Syllabus Custom Topic adder */}
-                    <div className="pt-2 border-t border-slate-200 dark:border-slate-700/80">
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="text"
-                          value={homeworkCustomTopic}
-                          onChange={(e) => setHomeworkCustomTopic(e.target.value)}
-                          placeholder="+ Out-of-syllabus topic (e.g. Extra Olympiad Rules)"
-                          className="flex-1 px-2.5 py-1 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                        />
+                <div className="space-y-4 pt-1 animate-in fade-in-50">
+                  {/* Action Bar: Presets & Add Task */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap p-2.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/40">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-amber-900 dark:text-amber-300">
+                        Homework Structure:
+                      </span>
+                      {batchSchools.length > 1 && (
                         <button
                           type="button"
-                          onClick={() => {
-                            if (
-                              homeworkCustomTopic.trim() &&
-                              !homeworkCustomTopicsList.includes(homeworkCustomTopic.trim())
-                            ) {
-                              setHomeworkCustomTopicsList((prev) => [
-                                ...prev,
-                                homeworkCustomTopic.trim(),
-                              ]);
-                              setHomeworkCustomTopic('');
-                            }
-                          }}
-                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500 text-white hover:bg-amber-600 shadow-2xs"
+                          onClick={handleSplitHomeworkBySchool}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/50 shadow-2xs flex items-center gap-1 transition-all"
+                          title="Generate a separate homework task for each distinct school in this batch"
                         >
-                          Add
+                          <Building2 className="w-3.5 h-3.5 text-amber-500" />
+                          <span>⚡ Split by School ({batchSchools.length} Schools)</span>
                         </button>
-                      </div>
-
-                      {homeworkCustomTopicsList.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {homeworkCustomTopicsList.map((ct, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
-                            >
-                              <span>⚡ {ct}</span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setHomeworkCustomTopicsList((prev) =>
-                                    prev.filter((_, i) => i !== idx)
-                                  )
-                                }
-                                className="hover:text-red-500"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                        </div>
                       )}
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddHomeworkTask}
+                      className="px-3 py-1 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-2xs flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add Another Homework Task</span>
+                    </button>
                   </div>
 
-                  {/* Target Scope & Grading Mode */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                        Target Student Scope
-                      </label>
-                      <select
-                        value={homeworkTargetType}
-                        onChange={(e) => setHomeworkTargetType(e.target.value as any)}
-                        className="w-full px-2.5 py-1 rounded-lg font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                      >
-                        <option value="whole_batch">Entire Batch ({enrolledStudents.length} Students)</option>
-                        <option value="specific_schools">Specific Schools in Batch</option>
-                      </select>
-                    </div>
+                  {/* Tasks List */}
+                  {homeworkTasks.map((task, tIdx) => {
+                    const taskSchoolNames =
+                      task.targetType === 'specific_schools' && task.targetSchoolIds.length > 0
+                        ? schools
+                            .filter((sc) => task.targetSchoolIds.includes(sc.id))
+                            .map((sc) => sc.name)
+                        : [];
 
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                        Evaluation Mode
-                      </label>
-                      <select
-                        value={homeworkGradingMode}
-                        onChange={(e) => setHomeworkGradingMode(e.target.value as any)}
-                        className="w-full px-2.5 py-1 rounded-lg font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                    return (
+                      <div
+                        key={task.id}
+                        className="p-4 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-3 relative"
                       >
-                        <option value="status_only">Fast Status (Done/Partial/Late/Not Done)</option>
-                        <option value="status_and_marks">Status + Numeric Marks</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {homeworkTargetType === 'specific_schools' && (
-                    <div className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-1">
-                      <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                        Select Target Schools:
-                      </span>
-                      <div className="grid grid-cols-2 gap-1 text-xs">
-                        {batchSchools.map((sc) => {
-                          const isChecked = homeworkTargetSchoolIds.includes(sc.id);
-                          return (
-                            <label key={sc.id} className="inline-flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => {
-                                  setHomeworkTargetSchoolIds((prev) =>
-                                    isChecked ? prev.filter((id) => id !== sc.id) : [...prev, sc.id]
-                                  );
-                                }}
-                                className="rounded text-light-indigo focus:ring-light-indigo w-3.5 h-3.5"
-                              />
-                              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                                {sc.name}
+                        {/* Task Card Header */}
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-200/60 dark:border-slate-700/60 pb-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2 py-0.5 rounded-lg text-xs font-black bg-amber-500 text-slate-950">
+                              Task #{tIdx + 1}
+                            </span>
+                            {task.targetType === 'specific_schools' ? (
+                              <span className="text-[11px] font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                <Building2 className="w-3 h-3 text-purple-500" />
+                                <span>
+                                  {taskSchoolNames.length > 0
+                                    ? taskSchoolNames.join(', ')
+                                    : 'Select Schools Below'}
+                                </span>
                               </span>
+                            ) : (
+                              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                                👥 Entire Batch ({enrolledStudents.length} Students)
+                              </span>
+                            )}
+                          </div>
+
+                          {homeworkTasks.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setHomeworkTasks(homeworkTasks.filter((_, i) => i !== tIdx))
+                              }
+                              className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
+                              title="Delete this homework task"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Title & Due Date */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div className="sm:col-span-2">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Homework Task Title *
                             </label>
-                          );
-                        })}
+                            <input
+                              type="text"
+                              value={task.title}
+                              onChange={(e) => {
+                                const updated = [...homeworkTasks];
+                                updated[tIdx].title = e.target.value;
+                                setHomeworkTasks(updated);
+                              }}
+                              placeholder={
+                                taskSchoolNames.length > 0
+                                  ? `e.g. ${taskSchoolNames[0]} Writing Part: Letter Ex 1-5`
+                                  : 'e.g. Modifiers Sheet 04 Exercises 1–25'
+                              }
+                              className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface text-slate-900 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Due Date
+                            </label>
+                            <input
+                              type="date"
+                              value={task.dueDate}
+                              onChange={(e) => {
+                                const updated = [...homeworkTasks];
+                                updated[tIdx].dueDate = e.target.value;
+                                setHomeworkTasks(updated);
+                              }}
+                              className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface text-slate-900 dark:text-white"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Instructions */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                            Instructions & Reference Notes
+                          </label>
+                          <input
+                            type="text"
+                            value={task.description}
+                            onChange={(e) => {
+                              const updated = [...homeworkTasks];
+                              updated[tIdx].description = e.target.value;
+                              setHomeworkTasks(updated);
+                            }}
+                            placeholder="e.g. Solve exercises in HW copy; check board question formats."
+                            className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface text-slate-900 dark:text-white"
+                          />
+                        </div>
+
+                        {/* Target Scope & Grading Mode */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Target Student Scope
+                            </label>
+                            <select
+                              value={task.targetType}
+                              onChange={(e) => {
+                                const updated = [...homeworkTasks];
+                                updated[tIdx].targetType = e.target.value as any;
+                                setHomeworkTasks(updated);
+                              }}
+                              className="w-full px-2.5 py-1 rounded-lg font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface text-slate-900 dark:text-white"
+                            >
+                              <option value="whole_batch">Entire Batch ({enrolledStudents.length} Students)</option>
+                              <option value="specific_schools">Specific Schools in Batch</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                              Evaluation Mode
+                            </label>
+                            <select
+                              value={task.gradingMode}
+                              onChange={(e) => {
+                                const updated = [...homeworkTasks];
+                                updated[tIdx].gradingMode = e.target.value as any;
+                                setHomeworkTasks(updated);
+                              }}
+                              className="w-full px-2.5 py-1 rounded-lg font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface text-slate-900 dark:text-white"
+                            >
+                              <option value="status_only">Fast Status (Done/Partial/Late/Not Done)</option>
+                              <option value="status_and_marks">Status + Numeric Marks</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* School checkboxes if specific_schools */}
+                        {task.targetType === 'specific_schools' && (
+                          <div className="p-2.5 rounded-xl bg-white dark:bg-dark-surface border border-slate-200 dark:border-slate-700 space-y-1.5">
+                            <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                              Select Target Schools for Task #{tIdx + 1}:
+                            </span>
+                            <div className="grid grid-cols-2 gap-1.5 text-xs">
+                              {batchSchools.map((sc) => {
+                                const isChecked = task.targetSchoolIds.includes(sc.id);
+                                const count = enrolledStudents.filter((s) => s.schoolId === sc.id).length;
+                                return (
+                                  <label
+                                    key={sc.id}
+                                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border cursor-pointer transition-all ${
+                                      isChecked
+                                        ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-300 dark:border-purple-800'
+                                        : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        const updated = [...homeworkTasks];
+                                        updated[tIdx].targetSchoolIds = isChecked
+                                          ? updated[tIdx].targetSchoolIds.filter((id) => id !== sc.id)
+                                          : [...updated[tIdx].targetSchoolIds, sc.id];
+                                        setHomeworkTasks(updated);
+                                      }}
+                                      className="rounded text-purple-600 focus:ring-purple-500 w-3.5 h-3.5"
+                                    />
+                                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                      {sc.name} ({count})
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Syllabus Scheme Link & Custom Topics */}
+                        <div className="p-3 rounded-xl bg-white dark:bg-dark-surface border border-slate-200 dark:border-slate-700 space-y-2">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                            <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                              <BookOpen className="w-3 h-3 text-light-indigo" />
+                              <span>Link to Syllabus Scheme (Optional):</span>
+                            </label>
+                            <select
+                              value={task.schemeId}
+                              onChange={(e) => {
+                                const updated = [...homeworkTasks];
+                                updated[tIdx].schemeId = e.target.value;
+                                setHomeworkTasks(updated);
+                              }}
+                              className="px-2 py-1 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                            >
+                              <option value="">No Scheme / Independent Homework</option>
+                              {batchSchemes.map((sch) => (
+                                <option key={sch.id} value={sch.id}>
+                                  {sch.title} ({sch.termType.replace('_', ' ').toUpperCase()})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {task.schemeId && (
+                            <div className="space-y-1 pt-1">
+                              <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                Select Syllabus Topics Tested:
+                              </span>
+                              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar p-1">
+                                {batchSchemes
+                                  .find((s) => s.id === task.schemeId)
+                                  ?.topics.map((top) => {
+                                    const isChecked = task.relatedTopics.includes(top.title);
+                                    return (
+                                      <button
+                                        key={top.id}
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = [...homeworkTasks];
+                                          updated[tIdx].relatedTopics = isChecked
+                                            ? updated[tIdx].relatedTopics.filter((t) => t !== top.title)
+                                            : [...updated[tIdx].relatedTopics, top.title];
+                                          setHomeworkTasks(updated);
+                                        }}
+                                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all ${
+                                          isChecked
+                                            ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                                            : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                                        }`}
+                                      >
+                                        {top.title}
+                                      </button>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Out-of-syllabus custom topic adder */}
+                          <div className="pt-2 border-t border-slate-200 dark:border-slate-700/80">
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={task.customTopicInput}
+                                onChange={(e) => {
+                                  const updated = [...homeworkTasks];
+                                  updated[tIdx].customTopicInput = e.target.value;
+                                  setHomeworkTasks(updated);
+                                }}
+                                placeholder="+ Out-of-syllabus topic (e.g. Extra Olympiad Rules)"
+                                className="flex-1 px-2.5 py-1 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (
+                                    task.customTopicInput.trim() &&
+                                    !task.customTopicsList.includes(task.customTopicInput.trim())
+                                  ) {
+                                    const updated = [...homeworkTasks];
+                                    updated[tIdx].customTopicsList = [
+                                      ...updated[tIdx].customTopicsList,
+                                      task.customTopicInput.trim(),
+                                    ];
+                                    updated[tIdx].customTopicInput = '';
+                                    setHomeworkTasks(updated);
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500 text-white hover:bg-amber-600 shadow-2xs"
+                              >
+                                Add
+                              </button>
+                            </div>
+
+                            {task.customTopicsList.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {task.customTopicsList.map((ct, cIdx) => (
+                                  <span
+                                    key={cIdx}
+                                    className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+                                  >
+                                    <span>⚡ {ct}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = [...homeworkTasks];
+                                        updated[tIdx].customTopicsList = updated[tIdx].customTopicsList.filter(
+                                          (_, i) => i !== cIdx
+                                        );
+                                        setHomeworkTasks(updated);
+                                      }}
+                                      className="hover:text-red-500"
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-xs text-slate-400 italic">
-                  No homework tagged to this session. Check 'Assign HW' to record a task with syllabus topics or custom exercises.
+                  No homework tagged to this session. Check &apos;Assign HW&apos; to assign tasks to the whole batch or different schools.
                 </p>
               )}
             </div>
@@ -1292,6 +1807,133 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
               </div>
             </div>
           </div>
+
+          {/* Previous Homework Due Today (To Check in this Class) Banner */}
+          {previousClassHomeworks.length > 0 && (
+            <div className="bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-teal-500/10 dark:from-purple-950/30 dark:via-indigo-950/30 dark:to-teal-950/30 rounded-3xl border-2 border-purple-200 dark:border-purple-900/60 p-4 sm:p-5 shadow-xs space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                    <BookOpenCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
+                        Previous Homework Due Today
+                      </h3>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
+                        {previousClassHomeworks.length} {previousClassHomeworks.length === 1 ? 'Task' : 'Tasks'} to Check
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Check and grade homework below in each student&apos;s card or use 1-click batch actions.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin/homework')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-white dark:bg-dark-surface text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-50 shadow-2xs transition-all"
+                  >
+                    <span>Full Homework Tracker</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Grid of Due Tasks with completion stats and 1-click bulk done */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {previousClassHomeworks.map((hw) => {
+                  const targetStudents = enrolledStudents.filter((s) => {
+                    if (hw.targetType === 'whole_batch') return true;
+                    if (hw.targetType === 'specific_schools') {
+                      return hw.targetSchoolIds?.includes(s.schoolId);
+                    }
+                    return false;
+                  });
+
+                  const doneCount = targetStudents.filter((s) => {
+                    const status = hw.submissions?.[s.id]?.status;
+                    return status === 'done' || status === 'incomplete' || status === 'late';
+                  }).length;
+                  const totalCount = targetStudents.length;
+                  const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+                  const targetSchoolNames =
+                    hw.targetType === 'specific_schools' && hw.targetSchoolIds && hw.targetSchoolIds.length > 0
+                      ? hw.targetSchoolIds
+                          .map((id) => batchSchools.find((sc) => sc.id === id)?.name || 'School')
+                          .join(', ')
+                      : 'Entire Batch';
+
+                  return (
+                    <div
+                      key={hw.id}
+                      className="p-3.5 rounded-2xl bg-white dark:bg-dark-surface border border-purple-100 dark:border-purple-900/50 shadow-2xs space-y-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-black text-xs sm:text-sm text-slate-900 dark:text-white truncate">
+                              {hw.title}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                            <span className="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 font-bold">
+                              <Building2 className="w-3 h-3" />
+                              <span>{targetSchoolNames}</span>
+                            </span>
+                            <span>•</span>
+                            <span>Due: {hw.dueDate}</span>
+                          </div>
+                          {hw.description && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 italic line-clamp-1 mt-0.5">
+                              {hw.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                            pct === 100
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+                              : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                          }`}
+                        >
+                          {doneCount}/{totalCount} Checked ({pct}%)
+                        </span>
+                      </div>
+
+                      {/* Mini Progress Bar */}
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-purple-600 h-1.5 rounded-full transition-all duration-300"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+
+                      {/* Bulk Mark Done Button */}
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {hw.gradingMode === 'status_and_marks' ? `Graded out of ${hw.maxMarks} marks` : 'Status Evaluation'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleBulkMarkHomeworkDone(hw.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 hover:bg-purple-100 border border-purple-200 dark:border-purple-800 transition-all shadow-2xs"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          <span>Mark All {hw.targetType === 'specific_schools' ? 'Target' : 'Batch'} Done</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Student Attendance & Detailed Recording Roster (Mobile-First Premium UI) */}
           {(() => {
@@ -1680,6 +2322,154 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                             </button>
                           </div>
 
+                          {/* Student Homework Due Today Check Strip */}
+                          {(() => {
+                            const stuDueHomeworks = previousClassHomeworks.filter((hw) => {
+                              if (hw.targetType === 'whole_batch') return true;
+                              if (hw.targetType === 'specific_schools') {
+                                return hw.targetSchoolIds?.includes(stu.schoolId);
+                              }
+                              return false;
+                            });
+
+                            if (stuDueHomeworks.length === 0) return null;
+
+                            return (
+                              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                    <BookOpenCheck className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                                    <span>Assigned Homework Due:</span>
+                                  </span>
+                                  <span className="text-[10px] font-medium text-slate-400">
+                                    {stuDueHomeworks.length} {stuDueHomeworks.length === 1 ? 'task' : 'tasks'}
+                                  </span>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  {stuDueHomeworks.map((hw) => {
+                                    const sub = hw.submissions?.[stu.id];
+                                    const status = sub?.status || 'pending';
+                                    const marks = sub?.obtainedMarks ?? (status === 'done' ? hw.maxMarks : 0);
+
+                                    return (
+                                      <div
+                                        key={hw.id}
+                                        className="p-2 sm:p-2.5 rounded-xl bg-purple-50/40 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                                      >
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                                              {hw.title}
+                                            </span>
+                                            {hw.targetType === 'specific_schools' && (
+                                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/60 dark:text-purple-300">
+                                                {stu.schoolName || 'School'}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {hw.relatedTopics && hw.relatedTopics.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mt-0.5">
+                                              {hw.relatedTopics.map((top, tI) => (
+                                                <span key={tI} className="text-[9px] text-slate-500 font-medium">
+                                                  #{top}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        {/* Evaluation Controls */}
+                                        <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
+                                          {/* 4 Status Buttons: Done, Partial, Late, Not Done */}
+                                          <div className="inline-flex rounded-lg p-0.5 bg-slate-200/70 dark:bg-slate-800 text-[11px] font-bold">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleUpdateStudentHomework(hw.id, stu.id, 'done', hw.maxMarks)}
+                                              className={`px-2 py-0.5 rounded-md transition-all ${
+                                                status === 'done'
+                                                  ? 'bg-emerald-500 text-white shadow-2xs font-black'
+                                                  : 'text-slate-600 dark:text-slate-300 hover:text-emerald-600'
+                                              }`}
+                                              title="Completed fully"
+                                            >
+                                              ✓ Done
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleUpdateStudentHomework(
+                                                  hw.id,
+                                                  stu.id,
+                                                  'incomplete',
+                                                  Math.round((hw.maxMarks || 10) / 2)
+                                                )
+                                              }
+                                              className={`px-2 py-0.5 rounded-md transition-all ${
+                                                status === 'incomplete'
+                                                  ? 'bg-amber-500 text-slate-950 shadow-2xs font-black'
+                                                  : 'text-slate-600 dark:text-slate-300 hover:text-amber-600'
+                                              }`}
+                                              title="Partially done"
+                                            >
+                                              ½ Partial
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleUpdateStudentHomework(hw.id, stu.id, 'late', hw.maxMarks || 10)}
+                                              className={`px-2 py-0.5 rounded-md transition-all ${
+                                                status === 'late'
+                                                  ? 'bg-sky-500 text-white shadow-2xs font-black'
+                                                  : 'text-slate-600 dark:text-slate-300 hover:text-sky-600'
+                                              }`}
+                                              title="Late submission"
+                                            >
+                                              Late
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleUpdateStudentHomework(hw.id, stu.id, 'not_done', 0)}
+                                              className={`px-2 py-0.5 rounded-md transition-all ${
+                                                status === 'not_done'
+                                                  ? 'bg-rose-500 text-white shadow-2xs font-black'
+                                                  : 'text-slate-600 dark:text-slate-300 hover:text-rose-600'
+                                              }`}
+                                              title="Not done"
+                                            >
+                                              ✗ Not Done
+                                            </button>
+                                          </div>
+
+                                          {/* Numeric Marks if status_and_marks */}
+                                          {hw.gradingMode === 'status_and_marks' && (
+                                            <div className="flex items-center gap-1 bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+                                              <input
+                                                type="number"
+                                                min={0}
+                                                max={hw.maxMarks}
+                                                value={marks}
+                                                onChange={(e) =>
+                                                  handleUpdateStudentHomework(
+                                                    hw.id,
+                                                    stu.id,
+                                                    status === 'pending' ? 'done' : status,
+                                                    Number(e.target.value)
+                                                  )
+                                                }
+                                                className="w-10 px-1 py-0.5 rounded text-xs font-bold text-center bg-transparent text-slate-900 dark:text-white"
+                                              />
+                                              <span className="text-[10px] text-slate-400 font-bold">/{hw.maxMarks}</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
                           {/* Card Bottom: Quiz Score & Observation Input */}
                           <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
                             {/* Quiz Score Input if Exam active */}
@@ -1755,13 +2545,21 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                                 (s) => (attendanceRecords[s.id]?.attendance || 'present') === 'present'
                               ).length;
 
+                              // Check if any homework is assigned to this school (or whole batch)
+                              const targetSchoolId = schoolStudents[0]?.schoolId;
+                              const schoolHomeworks = previousClassHomeworks.filter(
+                                (h) =>
+                                  h.targetType === 'whole_batch' ||
+                                  (h.targetType === 'specific_schools' && h.targetSchoolIds?.includes(targetSchoolId))
+                              );
+
                               return (
                                 <div
                                   key={schoolName}
                                   className="rounded-2xl border border-slate-200/80 dark:border-dark-border bg-slate-50/50 dark:bg-slate-900/30 p-3 space-y-3"
                                 >
-                                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-800">
-                                    <div className="flex items-center gap-2">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1.5 border-b border-slate-200 dark:border-slate-800">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <Building2 className="w-4 h-4 text-slate-500" />
                                       <span className="font-extrabold text-sm text-slate-900 dark:text-white">
                                         {schoolName}
@@ -1771,23 +2569,41 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                                       </span>
                                     </div>
 
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const updated = { ...attendanceRecords };
-                                        schoolStudents.forEach((stu) => {
-                                          updated[stu.id] = {
-                                            ...updated[stu.id],
-                                            studentId: stu.id,
-                                            attendance: 'present',
-                                          };
-                                        });
-                                        setAttendanceRecords(updated);
-                                      }}
-                                      className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline"
-                                    >
-                                      + Mark All {schoolName} Present
-                                    </button>
+                                    <div className="flex items-center gap-2 flex-wrap self-end sm:self-auto">
+                                      {schoolHomeworks.length > 0 && (
+                                        <div className="flex items-center gap-1 flex-wrap">
+                                          {schoolHomeworks.map((shw) => (
+                                            <button
+                                              key={shw.id}
+                                              type="button"
+                                              onClick={() => handleBulkMarkHomeworkDone(shw.id, targetSchoolId)}
+                                              className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 hover:bg-purple-200 border border-purple-200 dark:border-purple-800 transition-all shadow-2xs"
+                                              title={`Mark all ${schoolName} students Done for: ${shw.title}`}
+                                            >
+                                              ✓ Mark All {schoolName} HW Done
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const updated = { ...attendanceRecords };
+                                          schoolStudents.forEach((stu) => {
+                                            updated[stu.id] = {
+                                              ...updated[stu.id],
+                                              studentId: stu.id,
+                                              attendance: 'present',
+                                            };
+                                          });
+                                          setAttendanceRecords(updated);
+                                        }}
+                                        className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline"
+                                      >
+                                        + Mark All {schoolName} Present
+                                      </button>
+                                    </div>
                                   </div>
 
                                   <div className="space-y-3">

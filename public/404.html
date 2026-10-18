@@ -4,16 +4,17 @@
     <meta charset="utf-8">
     <title>NPB Redirecting...</title>
     <script type="text/javascript">
-      // GitHub Pages SPA Single Page Application redirect trick
-      var pathSegmentsToKeep = 1;
+      // GitHub Pages SPA redirect directly into HashRouter format
       var l = window.location;
-      l.replace(
-        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
-        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
-        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
-        l.hash
-      );
+      var pathParts = l.pathname.split('/').filter(Boolean);
+      var isProjectPage = l.hostname.endsWith('github.io') && pathParts.length > 0;
+      var repoPrefix = isProjectPage ? '/' + pathParts[0] : '';
+      var routeParts = isProjectPage ? pathParts.slice(1) : pathParts;
+      var route = routeParts.join('/');
+
+      var target = l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        repoPrefix + '/#/' + route + (l.search || '') + l.hash;
+      l.replace(target);
     </script>
   </head>
   <body>

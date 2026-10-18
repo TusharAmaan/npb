@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { NPBLogo } from '../common/NPBLogo';
 import { ThemeToggle } from '../common/ThemeToggle';
@@ -19,15 +19,29 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
+  PenTool,
 } from 'lucide-react';
 
 export const HomeLandingView: React.FC = () => {
   const { isAdmin, currentUser } = useAuth();
-  const { settings, batches, students } = useData();
+  const { settings, batches, students, onlineExams } = useData();
   const navigate = useNavigate();
 
   const [lookupToken, setLookupToken] = useState('');
   const [lookupError, setLookupError] = useState('');
+  const [examCodeInput, setExamCodeInput] = useState('');
+  const [examError, setExamError] = useState('');
+
+  // Auto-detect GitHub Pages redirect search (?/exam/CODE) if landing here
+  useEffect(() => {
+    const search = window.location.search;
+    if (search && search.startsWith('?/exam/')) {
+      const code = search.slice(7);
+      if (code) {
+        navigate(`/exam/${code}`, { replace: true });
+      }
+    }
+  }, [navigate]);
 
   const handleLookup = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +49,18 @@ export const HomeLandingView: React.FC = () => {
     const trimmed = lookupToken.trim();
     if (!trimmed) return;
 
-    // Search by shareToken or publicRollNo
+    // 1. Check if user typed an exam code in the main box
+    const matchedExam = onlineExams.find(
+      (ex) =>
+        ex.examCode.toLowerCase() === trimmed.toLowerCase() ||
+        ex.id.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (matchedExam) {
+      navigate(`/exam/${matchedExam.examCode}`);
+      return;
+    }
+
+    // 2. Search by shareToken or publicRollNo
     const matched = students.find(
       (s) =>
         s.shareToken.toLowerCase() === trimmed.toLowerCase() ||
@@ -44,9 +69,24 @@ export const HomeLandingView: React.FC = () => {
 
     if (matched) {
       navigate(`/report/${matched.shareToken}`);
-    } else {
-      setLookupError('No student found matching this Roll Number or Secret Token. Please check and try again.');
+      return;
     }
+
+    // 3. Fallback: If it has hyphens or resembles an exam code, attempt exam route
+    if (trimmed.includes('-')) {
+      navigate(`/exam/${trimmed.toUpperCase()}`);
+      return;
+    }
+
+    setLookupError('No student or exam found matching this Roll Number, Token, or Code.');
+  };
+
+  const handleExamSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setExamError('');
+    const code = examCodeInput.trim();
+    if (!code) return;
+    navigate(`/exam/${encodeURIComponent(code)}`);
   };
 
   return (
@@ -233,6 +273,74 @@ export const HomeLandingView: React.FC = () => {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Student Online Exam Direct Entry Card */}
+        <div className="max-w-2xl mx-auto bg-gradient-to-br from-indigo-50/70 via-white to-sky-50/70 dark:from-indigo-950/20 dark:via-dark-surface dark:to-sky-950/20 p-6 rounded-3xl border border-indigo-200/80 dark:border-indigo-900/40 shadow-md space-y-4">
+          <div className="text-center space-y-1">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20 mb-1">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Interactive Student Assessment</span>
+            </div>
+            <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center justify-center gap-2">
+              <PenTool className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <span>Take Online Exam — Enter Exam Code</span>
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Have an exam code from your tutor on WhatsApp? Enter it below (e.g. <code>HSC-ENG-01</code> or <code>H27-PREP01</code>) to start immediately.
+            </p>
+          </div>
+
+          <form onSubmit={handleExamSubmit} className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <PenTool className="w-4 h-4 text-indigo-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                required
+                value={examCodeInput}
+                onChange={(e) => setExamCodeInput(e.target.value)}
+                placeholder="Enter Exam Code (e.g. HSC-ENG-01 or H27-PREP01)..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl text-xs sm:text-sm border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase tracking-wider font-semibold placeholder:normal-case placeholder:font-normal"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-700 hover:to-sky-700 text-white shadow-md shadow-indigo-500/20 transition-all flex items-center justify-center gap-1.5"
+            >
+              <span>Start Exam</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </form>
+
+          {examError && (
+            <div className="p-3 rounded-xl bg-light-red/10 border border-light-red/30 text-xs font-semibold text-red-700 dark:text-light-red text-center">
+              {examError}
+            </div>
+          )}
+
+          {/* Active Exams Quick Shortcuts */}
+          {onlineExams.filter((e) => e.isActive).length > 0 && (
+            <div className="pt-2 border-t border-indigo-100 dark:border-indigo-900/40 flex flex-wrap items-center justify-center gap-2 text-xs">
+              <span className="text-slate-500 dark:text-slate-400 font-medium">Active Exams:</span>
+              {onlineExams
+                .filter((e) => e.isActive)
+                .slice(0, 3)
+                .map((exam) => (
+                  <button
+                    key={exam.id}
+                    type="button"
+                    onClick={() => navigate(`/exam/${exam.examCode}`)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-100/70 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold hover:bg-indigo-200 dark:hover:bg-indigo-800/60 transition-colors"
+                  >
+                    <span>{exam.title.length > 28 ? exam.title.slice(0, 28) + '...' : exam.title}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-600 text-white font-mono">
+                      {exam.examCode}
+                    </span>
+                  </button>
+                ))}
+            </div>
+          )}
         </div>
 
         {/* 3 Core System Pillar Cards */}

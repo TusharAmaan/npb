@@ -9,6 +9,31 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script type="text/javascript">
+      // GitHub Pages Single Page App redirect handler (converts ?/exam/... or ?/report/... to HashRouter /#/)
+      (function(l) {
+        if (l.search) {
+          var q = l.search.slice(1);
+          var route = '';
+          if (q.startsWith('/')) {
+            route = q.slice(1);
+          } else if (q.startsWith('p=')) {
+            route = decodeURIComponent(q.slice(2)).replace(/^\/+/, '');
+          } else if (q.startsWith('exam=')) {
+            route = 'exam/' + decodeURIComponent(q.slice(5));
+          }
+          if (route) {
+            var decoded = route.split('&').map(function(s) {
+              return s.replace(/~and~/g, '&');
+            }).join('?');
+            var basePath = l.pathname.replace(/\/index\.html$/, '').replace(/\/+$/, '');
+            var newUrl = l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+              basePath + '/#/' + decoded + (l.hash || '');
+            window.location.replace(newUrl);
+          }
+        }
+      }(window.location));
+    </script>
   </head>
   <body class="bg-slate-50 text-baltic-sea dark:bg-[#1e1e24] dark:text-slate-100 min-h-screen antialiased transition-colors duration-200">
     <div id="root"></div>

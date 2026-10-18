@@ -22,6 +22,7 @@ import {
   PassageGapAnswer,
   PassageSubmission,
   StudentExamResult,
+  AssignedHomeworkDetail,
 } from '../types/models';
 import {
   initialBatches,
@@ -87,7 +88,11 @@ interface DataContextType {
   saveSyllabusScheme: (scheme: SyllabusScheme) => Promise<void>;
   deleteSyllabusScheme: (schemeId: string) => Promise<void>;
   applySchemeToStudentSyllabi: (scheme: SyllabusScheme) => Promise<void>;
-  saveClassSession: (session: ClassSession, targetTopicStatus?: 'in_progress' | 'completed') => Promise<void>;
+  saveClassSession: (
+    session: ClassSession,
+    targetTopicStatus?: 'in_progress' | 'completed',
+    previousSessionId?: string
+  ) => Promise<void>;
   deleteClassSession: (sessionId: string) => Promise<void>;
   saveHomework: (homework: Homework) => Promise<void>;
   deleteHomework: (hwId: string) => Promise<void>;
@@ -688,11 +693,69 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Critical Module 3 Requirement: Automated Syllabus & Streak Sync on Save Session
   const saveClassSession = async (
     session: ClassSession,
-    targetTopicStatus: 'in_progress' | 'completed' = 'completed'
+    targetTopicStatus: 'in_progress' | 'completed' = 'completed',
+    previousSessionId?: string
   ) => {
+    // If editing an existing session and the date or ID changed, delete the old session entry
+    if (previousSessionId && previousSessionId !== session.id) {
+      if (isFirebaseConfigured && db) {
+        try {
+          await deleteDoc(doc(db, 'classSessions', previousSessionId));
+        } catch (err: any) {
+          console.warn('[NPB Firestore delete old session on date change]:', err.message);
+        }
+      }
+
+      // Also clean up old exam document if tied to previousSessionId
+      const oldExamId = `exam-quiz-${previousSessionId}`;
+      setExams((prev) => prev.filter((e) => e.id !== oldExamId));
+      if (isFirebaseConfigured && db) {
+        deleteDoc(doc(db, 'exams', oldExamId)).catch(() => {});
+      }
+
+      // Update any homeworks that were linked to previousSessionId
+      setHomeworks((prev) =>
+        prev.map((h) => {
+          if (h.sessionId === previousSessionId) {
+            const updated = { ...h, sessionId: session.id, assignedDate: session.date };
+            if (isFirebaseConfigured && db) {
+              firestoreSet(doc(db, 'homeworks', h.id), updated).catch(() => {});
+            }
+            return updated;
+          }
+          return h;
+        })
+      );
+
+      // Update linked class goals slot if any
+      setClassGoals((prevGoals) =>
+        prevGoals.map((g) => {
+          const slotIdx = g.slots.findIndex((s) => s.sessionId === previousSessionId);
+          if (slotIdx === -1) return g;
+          const newSlots = [...g.slots];
+          newSlots[slotIdx] = {
+            ...newSlots[slotIdx],
+            sessionId: session.id,
+            date: session.date,
+          };
+          const updatedGoal = { ...g, slots: newSlots, updatedAt: Date.now() };
+          if (isFirebaseConfigured && db) {
+            firestoreSet(doc(db, 'classGoals', g.id), updatedGoal).catch(() => {});
+          }
+          return updatedGoal;
+        })
+      );
+    }
+
     setSessions((prev) => {
-      const idx = prev.findIndex((s) => s.id === session.id);
-      return idx >= 0 ? prev.map((s) => (s.id === session.id ? session : s)) : [session, ...prev];
+      const listWithoutOld =
+        previousSessionId && previousSessionId !== session.id
+          ? prev.filter((s) => s.id !== previousSessionId)
+          : prev;
+      const idx = listWithoutOld.findIndex((s) => s.id === session.id);
+      return idx >= 0
+        ? listWithoutOld.map((s) => (s.id === session.id ? session : s))
+        : [session, ...listWithoutOld];
     });
 
     if (isFirebaseConfigured && db) {
@@ -868,46 +931,60 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // Automated Assigned Homework Sync
-    const hwData = session.assignedHomework;
-    if (hwData?.hasHomework) {
-      const hwId = hwData.homeworkId || `hw-${session.id}`;
+    // Automated Assigned Homework Sync (Supports multiple school-differentiated tasks)
+    const hwList: AssignedHomeworkDetail[] =
+      session.assignedHomeworks && session.assignedHomeworks.length > 0
+        ? session.assignedHomeworks.filter((h) => h.hasHomework && h.title.trim().length > 0)
+        : session.assignedHomework?.hasHomework
+        ? [session.assignedHomework]
+        : [];
+
+    if (hwList.length > 0) {
       setHomeworks((prev) => {
-        const existingHw = prev.find((h) => h.id === hwId);
-        const relatedTopics =
-          hwData.relatedTopics && hwData.relatedTopics.length > 0
-            ? hwData.relatedTopics
-            : (session.topicsTaught || []);
+        let currentHws = [...prev];
 
-        const generatedHw: Homework = {
-          id: hwId,
-          batchId: session.batchId,
-          title: hwData.title || `Homework from ${session.date}`,
-          assignedDate: session.date,
-          dueDate: hwData.dueDate,
-          description: hwData.description,
-          relatedTopics,
-          outOfSyllabusTopics: hwData.outOfSyllabusTopics || [],
-          schemeId: hwData.schemeId,
-          sessionId: session.id,
-          targetType: hwData.targetType || 'whole_batch',
-          targetSchoolIds: hwData.targetSchoolIds || [],
-          gradingMode: hwData.gradingMode || 'status_only',
-          maxMarks: hwData.maxMarks,
-          submissions: existingHw?.submissions || {},
-          createdAt: existingHw?.createdAt || Date.now(),
-        };
+        hwList.forEach((hwData, hIdx) => {
+          const hwId = hwData.homeworkId || `hw-${session.id}${hwList.length > 1 ? `-${hIdx}` : ''}`;
+          const existingHw = currentHws.find((h) => h.id === hwId);
+          const relatedTopics =
+            hwData.relatedTopics && hwData.relatedTopics.length > 0
+              ? hwData.relatedTopics
+              : (session.topicsTaught || []);
 
-        const idx = prev.findIndex((h) => h.id === hwId);
-        const nextList = idx >= 0 ? prev.map((h) => (h.id === hwId ? generatedHw : h)) : [generatedHw, ...prev];
+          const generatedHw: Homework = {
+            id: hwId,
+            batchId: session.batchId,
+            title: hwData.title || `Homework from ${session.date}`,
+            assignedDate: session.date,
+            dueDate: hwData.dueDate,
+            description: hwData.description,
+            relatedTopics,
+            outOfSyllabusTopics: hwData.outOfSyllabusTopics || [],
+            schemeId: hwData.schemeId,
+            sessionId: session.id,
+            targetType: hwData.targetType || 'whole_batch',
+            targetSchoolIds: hwData.targetSchoolIds || [],
+            gradingMode: hwData.gradingMode || 'status_only',
+            maxMarks: hwData.maxMarks,
+            submissions: existingHw?.submissions || {},
+            createdAt: existingHw?.createdAt || Date.now(),
+          };
 
-        if (isFirebaseConfigured && db) {
-          firestoreSet(doc(db, 'homeworks', hwId), generatedHw).catch((err) =>
-            console.warn('[NPB Firestore homework sync]:', err.message)
-          );
-        }
+          const idx = currentHws.findIndex((h) => h.id === hwId);
+          if (idx >= 0) {
+            currentHws[idx] = generatedHw;
+          } else {
+            currentHws = [generatedHw, ...currentHws];
+          }
 
-        return nextList;
+          if (isFirebaseConfigured && db) {
+            firestoreSet(doc(db, 'homeworks', hwId), generatedHw).catch((err) =>
+              console.warn('[NPB Firestore homework sync]:', err.message)
+            );
+          }
+        });
+
+        return currentHws;
       });
     }
 
