@@ -90,46 +90,85 @@ export const OnlineExamManager: React.FC = () => {
   const [formShowSolutions, setFormShowSolutions] = useState<boolean>(true);
   const [formPassMarks, setFormPassMarks] = useState<number>(10);
 
-  // Form Content: Passages
-  const [formPassages, setFormPassages] = useState<PassageSection[]>([
-    {
-      id: `p-${Date.now()}`,
-      title: 'Question 1: Fill in the blanks with suitable words from the box (With Clues)',
-      instructions:
-        'Read the passage and fill in the blanks with words from the box. You may need to change word forms.',
+  // Form Content: Passages & MCQs (both completely optional and deletable)
+  const [formPassages, setFormPassages] = useState<PassageSection[]>([]);
+  const [formMcqs, setFormMcqs] = useState<McqQuestion[]>([]);
+
+  // Helpers to add & preset question types
+  const handleAddPassage = () => {
+    const newP: PassageSection = {
+      id: `p-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      title: `Question ${formPassages.length + 1}: Fill in the blanks with suitable words`,
+      instructions: 'Read the passage below and fill in each numbered blank with an appropriate word.',
       passageType: 'with_clues',
       clues: ['nature', 'pollute', 'aware', 'preserve', 'threat', 'extinct', 'environment', 'future'],
-      hasFormChange: true,
+      hasFormChange: false,
       directPlacementFeedback: false,
       passageText:
         'Man lives in a (a) _____ environment. Rapid urbanization causes (b) _____ of water and air. We must raise (c) _____ among students. Many rare birds face (d) _____. Trees help to (e) _____ ecological balance.',
       gaps: [
-        { id: 'a', gapLabel: '(a)', acceptedAnswers: ['natural'], marks: 1, clueHint: 'nature' },
-        { id: 'b', gapLabel: '(b)', acceptedAnswers: ['pollution'], marks: 1, clueHint: 'pollute' },
-        { id: 'c', gapLabel: '(c)', acceptedAnswers: ['awareness'], marks: 1, clueHint: 'aware' },
-        { id: 'd', gapLabel: '(d)', acceptedAnswers: ['extinction'], marks: 1, clueHint: 'extinct' },
-        { id: 'e', gapLabel: '(e)', acceptedAnswers: ['preserve'], marks: 1, clueHint: 'preserve' },
+        { id: 'a', gapLabel: '(a)', acceptedAnswers: ['natural', 'nature'], marks: 1 },
+        { id: 'b', gapLabel: '(b)', acceptedAnswers: ['pollution'], marks: 1 },
+        { id: 'c', gapLabel: '(c)', acceptedAnswers: ['awareness'], marks: 1 },
+        { id: 'd', gapLabel: '(d)', acceptedAnswers: ['extinction'], marks: 1 },
+        { id: 'e', gapLabel: '(e)', acceptedAnswers: ['preserve'], marks: 1 },
       ],
-    },
-  ]);
+    };
+    setFormPassages((prev) => [...prev, newP]);
+  };
 
-  // Form Content: MCQs
-  const [formMcqs, setFormMcqs] = useState<McqQuestion[]>([
-    {
-      id: `mcq-${Date.now()}`,
-      question: 'Which of the following is a synonym of "Vital"?',
+  const handleAddMcq = () => {
+    const newQ: McqQuestion = {
+      id: `mcq-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      question: `Question ${formMcqs.length + 1}: `,
       options: [
-        { id: 'opt-1', label: 'A', text: 'Crucial / Essential' },
-        { id: 'opt-2', label: 'B', text: 'Trivial' },
-        { id: 'opt-3', label: 'C', text: 'Minor' },
-        { id: 'opt-4', label: 'D', text: 'Unnecessary' },
+        { id: 'opt-1', label: 'A', text: 'Option A' },
+        { id: 'opt-2', label: 'B', text: 'Option B' },
+        { id: 'opt-3', label: 'C', text: 'Option C' },
+        { id: 'opt-4', label: 'D', text: 'Option D' },
       ],
       correctOptionIds: ['opt-1'],
       allowMultiple: false,
       marks: 1,
-      explanation: 'Vital means absolutely necessary and essential.',
-    },
-  ]);
+    };
+    setFormMcqs((prev) => [...prev, newQ]);
+  };
+
+  const handleSetPresetAllMcq = () => {
+    setFormPassages([]);
+    if (formMcqs.length === 0) {
+      setFormMcqs([
+        {
+          id: `mcq-${Date.now()}-1`,
+          question: 'MCQ Question 1: ',
+          options: [
+            { id: 'opt-1', label: 'A', text: 'Option A' },
+            { id: 'opt-2', label: 'B', text: 'Option B' },
+            { id: 'opt-3', label: 'C', text: 'Option C' },
+            { id: 'opt-4', label: 'D', text: 'Option D' },
+          ],
+          correctOptionIds: ['opt-1'],
+          allowMultiple: false,
+          marks: 1,
+        },
+      ]);
+    }
+  };
+
+  const handleSetPresetAllPassage = () => {
+    setFormMcqs([]);
+    if (formPassages.length === 0) {
+      handleAddPassage();
+    }
+  };
+
+  const handleClearAllPassages = () => {
+    setFormPassages([]);
+  };
+
+  const handleClearAllMcqs = () => {
+    setFormMcqs([]);
+  };
 
   // Active Selected Exam for Submissions Tab
   const activeExam = useMemo(() => {
@@ -159,7 +198,7 @@ export const OnlineExamManager: React.FC = () => {
       .sort((a, b) => b.totalMarksObtained - a.totalMarksObtained);
   }, [examSubmissions, activeExam]);
 
-  // Open Create Modal with clean defaults
+  // Open Create Modal with clean defaults (defaulting to pure MCQ preset so tutor is never forced into passages)
   const handleOpenCreateModal = () => {
     setEditingExamId(null);
     setFormTitle('');
@@ -176,7 +215,24 @@ export const OnlineExamManager: React.FC = () => {
     setFormAttemptLimit(1);
     setFormShowScore(true);
     setFormShowSolutions(true);
-    setFormPassMarks(10);
+    setFormPassMarks(5);
+    // Start with 1 MCQ and 0 passages (no mandatory passage!)
+    setFormPassages([]);
+    setFormMcqs([
+      {
+        id: `mcq-${Date.now()}-1`,
+        question: 'MCQ Question 1: ',
+        options: [
+          { id: 'opt-1', label: 'A', text: 'Option A' },
+          { id: 'opt-2', label: 'B', text: 'Option B' },
+          { id: 'opt-3', label: 'C', text: 'Option C' },
+          { id: 'opt-4', label: 'D', text: 'Option D' },
+        ],
+        correctOptionIds: ['opt-1'],
+        allowMultiple: false,
+        marks: 1,
+      },
+    ]);
     setIsModalOpen(true);
   };
 
@@ -210,6 +266,16 @@ export const OnlineExamManager: React.FC = () => {
       await alert({
         title: 'Missing Required Fields',
         message: 'Please provide both an Exam Title and a Short Exam Code.',
+        variant: 'warning',
+      });
+      return;
+    }
+
+    // Validate that at least one question (either an MCQ or a Passage) is present
+    if (formPassages.length === 0 && formMcqs.length === 0) {
+      await alert({
+        title: 'No Questions Added',
+        message: 'Please add at least one question (either an MCQ or a Fill in the Blanks passage) to save the exam.',
         variant: 'warning',
       });
       return;
@@ -1053,321 +1119,453 @@ _Best of luck with your preparation!_`;
                 )}
               </div>
 
-              {/* PASSAGE SECTIONS BUILDER */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-border pb-2">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
-                    <BookOpen className="w-4 h-4 text-amber-500" />
-                    <span>Fill in the Blanks Passages ({formPassages.length})</span>
-                  </h4>
-
+              {/* QUICK QUESTION FORMAT PRESETS */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-sky-500/10 to-indigo-500/10 border border-slate-200 dark:border-dark-border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div>
+                  <span className="text-xs font-black text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <Sliders className="w-4 h-4 text-amber-500" />
+                    <span>Question Format Presets:</span>
+                  </span>
+                  <p className="text-[10px] text-slate-500">
+                    Switch exam format in 1-click or add/remove questions freely below
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleSetPresetAllMcq}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                      formPassages.length === 0 && formMcqs.length > 0
+                        ? 'bg-sky-600 text-white shadow-xs'
+                        : 'bg-white dark:bg-dark-surface border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    🎯 All-MCQ Exam ({formMcqs.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSetPresetAllPassage}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                      formPassages.length > 0 && formMcqs.length === 0
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-white dark:bg-dark-surface border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    📝 All-Passage Exam ({formPassages.length})
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
-                      const newP: PassageSection = {
-                        id: `p-${Date.now()}`,
-                        title: `Question ${formPassages.length + 1}: Fill in the blanks`,
-                        instructions: 'Read the passage and fill in the blanks.',
-                        passageType: 'with_clues',
-                        clues: ['word1', 'word2', 'word3', 'word4', 'word5'],
-                        hasFormChange: false,
-                        directPlacementFeedback: false,
-                        passageText:
-                          'This is a sample passage where (a) _____ is tested along with (b) _____ and (c) _____.',
-                        gaps: [
-                          { id: 'a', gapLabel: '(a)', acceptedAnswers: ['word1'], marks: 1 },
-                          { id: 'b', gapLabel: '(b)', acceptedAnswers: ['word2'], marks: 1 },
-                          { id: 'c', gapLabel: '(c)', acceptedAnswers: ['word3'], marks: 1 },
-                        ],
-                      };
-                      setFormPassages([...formPassages, newP]);
+                      if (formPassages.length === 0) handleAddPassage();
+                      if (formMcqs.length === 0) handleAddMcq();
                     }}
-                    className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1"
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                      formPassages.length > 0 && formMcqs.length > 0
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-white dark:bg-dark-surface border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+                    }`}
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Add Another Passage</span>
+                    ⚡ Hybrid (Passages + MCQs)
                   </button>
                 </div>
+              </div>
 
-                {formPassages.map((p, pIdx) => (
-                  <div
-                    key={p.id}
-                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <input
-                        type="text"
-                        value={p.title}
-                        onChange={(e) => {
-                          const updated = [...formPassages];
-                          updated[pIdx].title = e.target.value;
-                          setFormPassages(updated);
-                        }}
-                        className="flex-1 px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
-                      />
+              {/* PASSAGE SECTIONS BUILDER */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-border pb-2 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-amber-500" />
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                      Fill in the Blanks Passages ({formPassages.length})
+                    </h4>
+                    {formPassages.length > 0 && (
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        (Optional — delete all if you want pure MCQ)
+                      </span>
+                    )}
+                  </div>
 
-                      {formPassages.length > 1 && (
+                  <div className="flex items-center gap-2">
+                    {formPassages.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearAllPassages}
+                        className="text-[11px] font-bold text-red-500 hover:text-red-700 hover:underline"
+                      >
+                        Delete All Passages
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleAddPassage}
+                      className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add Passage</span>
+                    </button>
+                  </div>
+                </div>
+
+                {formPassages.length === 0 ? (
+                  <div className="p-5 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/20 text-center space-y-2">
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                      No passage questions in this exam. (Pure MCQ mode is active)
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleAddPassage}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add Passage (Fill in the Blanks)</span>
+                    </button>
+                  </div>
+                ) : (
+                  formPassages.map((p, pIdx) => (
+                    <div
+                      key={p.id}
+                      className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-black text-amber-600 shrink-0">Passage {pIdx + 1}:</span>
+                        <input
+                          type="text"
+                          value={p.title}
+                          onChange={(e) => {
+                            const updated = [...formPassages];
+                            updated[pIdx].title = e.target.value;
+                            setFormPassages(updated);
+                          }}
+                          className="flex-1 px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
+                        />
+
+                        {/* ALWAYS ALLOW DELETING ANY PASSAGE */}
                         <button
                           type="button"
                           onClick={() => setFormPassages(formPassages.filter((_, i) => i !== pIdx))}
-                          className="p-1.5 text-slate-400 hover:text-red-500 rounded"
-                          title="Remove Passage"
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
+                          title="Delete this passage"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                          Clue Box Style
-                        </label>
-                        <select
-                          value={p.passageType}
-                          onChange={(e) => {
-                            const updated = [...formPassages];
-                            updated[pIdx].passageType = e.target.value as any;
-                            setFormPassages(updated);
-                          }}
-                          className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
-                        >
-                          <option value="with_clues">With Clues (Top Word Box)</option>
-                          <option value="without_clues">Without Clues (Grammar / Direct)</option>
-                        </select>
                       </div>
 
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                          Word Form Changes
-                        </label>
-                        <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
-                          <input
-                            type="checkbox"
-                            checked={p.hasFormChange}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                            Clue Box Style
+                          </label>
+                          <select
+                            value={p.passageType}
                             onChange={(e) => {
                               const updated = [...formPassages];
-                              updated[pIdx].hasFormChange = e.target.checked;
+                              updated[pIdx].passageType = e.target.value as any;
                               setFormPassages(updated);
                             }}
-                            className="rounded text-amber-500"
-                          />
-                          <span>Requires form changes (e.g. nature → natural)</span>
-                        </label>
-                      </div>
-                    </div>
-
-                    {p.passageType === 'with_clues' && (
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                          Clue Words (Comma separated):
-                        </label>
-                        <input
-                          type="text"
-                          value={p.clues.join(', ')}
-                          onChange={(e) => {
-                            const updated = [...formPassages];
-                            updated[pIdx].clues = e.target.value
-                              .split(',')
-                              .map((w) => w.trim())
-                              .filter(Boolean);
-                            setFormPassages(updated);
-                          }}
-                          placeholder="e.g. nature, pollute, aware, preserve, threat, extinct..."
-                          className="w-full px-3 py-1.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
-                        />
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                        Passage Text (Use (a) _____, (b) _____ for blanks):
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={p.passageText}
-                        onChange={(e) => {
-                          const updated = [...formPassages];
-                          updated[pIdx].passageText = e.target.value;
-                          setFormPassages(updated);
-                        }}
-                        className="w-full px-3 py-2 rounded-xl text-xs font-mono border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
-                      />
-                    </div>
-
-                    {/* Dynamic Gaps List */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-400 uppercase">
-                          Answer Keys for Gaps ({p.gaps.length}):
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const updated = [...formPassages];
-                            const nextChar = String.fromCharCode(97 + updated[pIdx].gaps.length);
-                            updated[pIdx].gaps.push({
-                              id: nextChar,
-                              gapLabel: `(${nextChar})`,
-                              acceptedAnswers: ['answer'],
-                              marks: 1,
-                            });
-                            setFormPassages(updated);
-                          }}
-                          className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline"
-                        >
-                          + Add Gap ({String.fromCharCode(97 + p.gaps.length)})
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {p.gaps.map((g, gIdx) => (
-                          <div
-                            key={g.id}
-                            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface flex items-center justify-between gap-2"
+                            className="w-full px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
                           >
-                            <span className="font-bold text-amber-600 text-xs shrink-0">
-                              {g.gapLabel}
-                            </span>
+                            <option value="with_clues">With Clues (Top Word Box)</option>
+                            <option value="without_clues">Without Clues (Grammar / Direct)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                            Word Form Changes
+                          </label>
+                          <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-300">
                             <input
-                              type="text"
-                              value={g.acceptedAnswers.join(' / ')}
+                              type="checkbox"
+                              checked={p.hasFormChange}
                               onChange={(e) => {
                                 const updated = [...formPassages];
-                                updated[pIdx].gaps[gIdx].acceptedAnswers = e.target.value
-                                  .split('/')
-                                  .map((a) => a.trim())
-                                  .filter(Boolean);
+                                updated[pIdx].hasFormChange = e.target.checked;
                                 setFormPassages(updated);
                               }}
-                              placeholder="Accepted (e.g. natural / naturally)"
-                              className="flex-1 px-2 py-1 rounded text-xs border border-slate-200 dark:border-slate-700"
+                              className="rounded text-amber-500"
                             />
-                            {p.gaps.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => {
+                            <span>Requires form changes (e.g. nature → natural)</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {p.passageType === 'with_clues' && (
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                            Clue Words (Comma separated):
+                          </label>
+                          <input
+                            type="text"
+                            value={p.clues.join(', ')}
+                            onChange={(e) => {
+                              const updated = [...formPassages];
+                              updated[pIdx].clues = e.target.value
+                                .split(',')
+                                .map((w) => w.trim())
+                                .filter(Boolean);
+                              setFormPassages(updated);
+                            }}
+                            placeholder="e.g. nature, pollute, aware, preserve, threat, extinct..."
+                            className="w-full px-3 py-1.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                          Passage Text (Use (a) _____, (b) _____ for blanks):
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={p.passageText}
+                          onChange={(e) => {
+                            const updated = [...formPassages];
+                            updated[pIdx].passageText = e.target.value;
+                            setFormPassages(updated);
+                          }}
+                          className="w-full px-3 py-2 rounded-xl text-xs font-mono border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
+                        />
+                      </div>
+
+                      {/* Dynamic Gaps List */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-400 uppercase">
+                            Answer Keys for Gaps ({p.gaps.length}):
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...formPassages];
+                              const nextChar = String.fromCharCode(97 + updated[pIdx].gaps.length);
+                              updated[pIdx].gaps.push({
+                                id: nextChar,
+                                gapLabel: `(${nextChar})`,
+                                acceptedAnswers: ['answer'],
+                                marks: 1,
+                              });
+                              setFormPassages(updated);
+                            }}
+                            className="text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:underline"
+                          >
+                            + Add Gap ({String.fromCharCode(97 + p.gaps.length)})
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {p.gaps.map((g, gIdx) => (
+                            <div
+                              key={g.id}
+                              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface flex items-center justify-between gap-2"
+                            >
+                              <span className="font-bold text-amber-600 text-xs shrink-0">
+                                {g.gapLabel}
+                              </span>
+                              <input
+                                type="text"
+                                value={g.acceptedAnswers.join(' / ')}
+                                onChange={(e) => {
                                   const updated = [...formPassages];
-                                  updated[pIdx].gaps = updated[pIdx].gaps.filter((_, i) => i !== gIdx);
+                                  updated[pIdx].gaps[gIdx].acceptedAnswers = e.target.value
+                                    .split('/')
+                                    .map((a) => a.trim())
+                                    .filter(Boolean);
                                   setFormPassages(updated);
                                 }}
-                                className="text-slate-400 hover:text-red-500"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                                placeholder="Accepted (e.g. natural / naturally)"
+                                className="flex-1 px-2 py-1 rounded text-xs border border-slate-200 dark:border-slate-700"
+                              />
+                              {p.gaps.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = [...formPassages];
+                                    updated[pIdx].gaps = updated[pIdx].gaps.filter((_, i) => i !== gIdx);
+                                    setFormPassages(updated);
+                                  }}
+                                  className="text-slate-400 hover:text-red-500"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
 
               {/* MCQ BUILDER */}
               <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-border pb-2">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-border pb-2 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-sky-500" />
-                    <span>Multiple Choice Questions ({formMcqs.length})</span>
-                  </h4>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                      Multiple Choice Questions ({formMcqs.length})
+                    </h4>
+                    {formMcqs.length > 0 && (
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        (Optional — delete all if you want pure Passage exam)
+                      </span>
+                    )}
+                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const newQ: McqQuestion = {
-                        id: `mcq-${Date.now()}`,
-                        question: 'What is the correct answer?',
-                        options: [
-                          { id: 'opt-1', label: 'A', text: 'Option A' },
-                          { id: 'opt-2', label: 'B', text: 'Option B' },
-                          { id: 'opt-3', label: 'C', text: 'Option C' },
-                          { id: 'opt-4', label: 'D', text: 'Option D' },
-                        ],
-                        correctOptionIds: ['opt-1'],
-                        allowMultiple: false,
-                        marks: 1,
-                      };
-                      setFormMcqs([...formMcqs, newQ]);
-                    }}
-                    className="text-[11px] font-bold text-sky-600 dark:text-spiro-disco-ball hover:underline flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Add MCQ</span>
-                  </button>
-                </div>
-
-                {formMcqs.map((q, qIdx) => (
-                  <div
-                    key={q.id}
-                    className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-xs text-sky-600">Q{qIdx + 1}:</span>
-                      <input
-                        type="text"
-                        value={q.question}
-                        onChange={(e) => {
-                          const updated = [...formMcqs];
-                          updated[qIdx].question = e.target.value;
-                          setFormMcqs(updated);
-                        }}
-                        placeholder="Question title..."
-                        className="flex-1 px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
-                      />
-
+                  <div className="flex items-center gap-2">
+                    {formMcqs.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => setFormMcqs(formMcqs.filter((_, i) => i !== qIdx))}
-                        className="p-1.5 text-slate-400 hover:text-red-500 rounded"
-                        title="Remove Question"
+                        onClick={handleClearAllMcqs}
+                        className="text-[11px] font-bold text-red-500 hover:text-red-700 hover:underline"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        Delete All MCQs
                       </button>
-                    </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleAddMcq}
+                      className="text-[11px] font-bold text-sky-600 dark:text-spiro-disco-ball hover:underline flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add MCQ</span>
+                    </button>
+                  </div>
+                </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {q.options.map((opt, oIdx) => (
-                        <div
-                          key={opt.id}
-                          className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-dark-surface border border-slate-200 dark:border-slate-700"
+                {formMcqs.length === 0 ? (
+                  <div className="p-5 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/20 text-center space-y-2">
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                      No MCQ questions in this exam. (Pure Passage mode is active)
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleAddMcq}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-sky-500/15 text-sky-700 dark:text-sky-300 hover:bg-sky-500/25 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add MCQ Question</span>
+                    </button>
+                  </div>
+                ) : (
+                  formMcqs.map((q, qIdx) => (
+                    <div
+                      key={q.id}
+                      className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-black text-xs text-sky-600 shrink-0">Q{qIdx + 1}:</span>
+                        <input
+                          type="text"
+                          value={q.question}
+                          onChange={(e) => {
+                            const updated = [...formMcqs];
+                            updated[qIdx].question = e.target.value;
+                            setFormMcqs(updated);
+                          }}
+                          placeholder="Type question here..."
+                          className="flex-1 px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
+                        />
+
+                        {/* ALWAYS ALLOW DELETING ANY MCQ */}
+                        <button
+                          type="button"
+                          onClick={() => setFormMcqs(formMcqs.filter((_, i) => i !== qIdx))}
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
+                          title="Delete this question"
                         >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700 dark:text-slate-300">
                           <input
                             type="checkbox"
-                            checked={q.correctOptionIds.includes(opt.id)}
+                            checked={q.allowMultiple}
                             onChange={(e) => {
                               const updated = [...formMcqs];
-                              if (e.target.checked) {
-                                updated[qIdx].correctOptionIds = q.allowMultiple
-                                  ? [...q.correctOptionIds, opt.id]
-                                  : [opt.id];
-                              } else {
-                                updated[qIdx].correctOptionIds = q.correctOptionIds.filter(
-                                  (id) => id !== opt.id
-                                );
-                              }
+                              updated[qIdx].allowMultiple = e.target.checked;
                               setFormMcqs(updated);
                             }}
-                            title="Mark as correct answer"
-                            className="rounded text-emerald-500"
+                            className="rounded text-sky-500"
                           />
-                          <span className="text-xs font-black">{opt.label}:</span>
+                          <span>Allow multiple correct answers</span>
+                        </label>
+
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-slate-400 font-bold">Marks:</label>
                           <input
-                            type="text"
-                            value={opt.text}
+                            type="number"
+                            min="1"
+                            value={q.marks}
                             onChange={(e) => {
                               const updated = [...formMcqs];
-                              updated[qIdx].options[oIdx].text = e.target.value;
+                              updated[qIdx].marks = parseInt(e.target.value) || 1;
                               setFormMcqs(updated);
                             }}
-                            className="flex-1 px-2 py-0.5 rounded text-xs border border-slate-200 dark:border-slate-700"
+                            className="w-14 px-2 py-1 rounded-md text-xs font-bold border border-slate-200 dark:border-slate-700 text-center"
                           />
                         </div>
-                      ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {q.options.map((opt, oIdx) => (
+                          <div
+                            key={opt.id}
+                            className="flex items-center gap-2 p-2 rounded-xl bg-white dark:bg-dark-surface border border-slate-200 dark:border-slate-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={q.correctOptionIds.includes(opt.id)}
+                              onChange={(e) => {
+                                const updated = [...formMcqs];
+                                if (e.target.checked) {
+                                  updated[qIdx].correctOptionIds = q.allowMultiple
+                                    ? [...q.correctOptionIds, opt.id]
+                                    : [opt.id];
+                                } else {
+                                  updated[qIdx].correctOptionIds = q.correctOptionIds.filter(
+                                    (id) => id !== opt.id
+                                  );
+                                }
+                                setFormMcqs(updated);
+                              }}
+                              title="Mark as correct answer"
+                              className="rounded text-emerald-500"
+                            />
+                            <span className="text-xs font-black shrink-0">{opt.label}:</span>
+                            <input
+                              type="text"
+                              value={opt.text}
+                              onChange={(e) => {
+                                const updated = [...formMcqs];
+                                updated[qIdx].options[oIdx].text = e.target.value;
+                                setFormMcqs(updated);
+                              }}
+                              className="flex-1 px-2 py-0.5 rounded text-xs border border-slate-200 dark:border-slate-700"
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      <div>
+                        <input
+                          type="text"
+                          value={q.explanation || ''}
+                          onChange={(e) => {
+                            const updated = [...formMcqs];
+                            updated[qIdx].explanation = e.target.value;
+                            setFormMcqs(updated);
+                          }}
+                          placeholder="Optional explanation / solution hint..."
+                          className="w-full px-2.5 py-1 rounded-lg text-[11px] italic border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface"
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
 
               {/* Form Buttons */}
