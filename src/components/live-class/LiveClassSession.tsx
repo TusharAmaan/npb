@@ -389,7 +389,23 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
     );
 
     if (existing) {
-      setAttendanceRecords(existing.records || {});
+      const resolvedRecords: Record<string, StudentSessionRecord> = { ...(existing.records || {}) };
+      enrolledStudents.forEach((stu) => {
+        if (!resolvedRecords[stu.id]) {
+          const joinDateStr = stu.joinedAt
+            ? new Date(stu.joinedAt).toISOString().split('T')[0]
+            : '2000-01-01';
+          const isJoined = sessionDate >= joinDateStr;
+          resolvedRecords[stu.id] = {
+            studentId: stu.id,
+            attendance: 'absent',
+            topicsCoveredForStudent: [],
+            inClassQuizScore: 0,
+            remarks: isJoined ? '' : `Joined on ${joinDateStr}`,
+          };
+        }
+      });
+      setAttendanceRecords(resolvedRecords);
       setLessonSummary(existing.generalLessonSummary || '');
       setSelectedTopics(existing.topicsTaught || []);
       setSessionType(existing.sessionType);
@@ -451,15 +467,21 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
         setHomeworkTasks([]);
       }
     } else {
-      // Default all enrolled students to 'present'
+      // New class session being created:
+      // If student joined on or before sessionDate: default to 'present' (quick attendance)
+      // If student joined after sessionDate (e.g. logging an older class): default to 'absent'!
       const defaultRecords: Record<string, StudentSessionRecord> = {};
       enrolledStudents.forEach((stu) => {
+        const joinDateStr = stu.joinedAt
+          ? new Date(stu.joinedAt).toISOString().split('T')[0]
+          : '2000-01-01';
+        const isJoined = sessionDate >= joinDateStr;
         defaultRecords[stu.id] = {
           studentId: stu.id,
-          attendance: 'present',
+          attendance: isJoined ? 'present' : 'absent',
           topicsCoveredForStudent: [],
           inClassQuizScore: 0,
-          remarks: '',
+          remarks: isJoined ? '' : `Joined on ${joinDateStr}`,
         };
       });
       setAttendanceRecords(defaultRecords);
@@ -494,7 +516,22 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
         setCustomTitle(targetSession.customTitle || '');
         setLessonSummary(targetSession.generalLessonSummary || '');
         setSelectedTopics(targetSession.topicsTaught || []);
-        setAttendanceRecords(targetSession.records || {});
+        const resolvedRecords: Record<string, StudentSessionRecord> = { ...(targetSession.records || {}) };
+        enrolledStudents.forEach((stu) => {
+          if (!resolvedRecords[stu.id]) {
+            const joinDateStr = stu.joinedAt
+              ? new Date(stu.joinedAt).toISOString().split('T')[0]
+              : '2000-01-01';
+            resolvedRecords[stu.id] = {
+              studentId: stu.id,
+              attendance: 'absent',
+              topicsCoveredForStudent: [],
+              inClassQuizScore: 0,
+              remarks: targetSession.date >= joinDateStr ? '' : `Joined on ${joinDateStr}`,
+            };
+          }
+        });
+        setAttendanceRecords(resolvedRecords);
         setStartTime(targetSession.startTime || '18:30');
         setEndTime(targetSession.endTime || '19:30');
         setNextClassLessonPlan(targetSession.nextClassLessonPlan || '');
@@ -833,7 +870,22 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
     setEndTime(sess.endTime || '19:30');
     setLessonSummary(sess.generalLessonSummary || '');
     setSelectedTopics(sess.topicsTaught || []);
-    setAttendanceRecords(sess.records || {});
+    const resolvedRecords: Record<string, StudentSessionRecord> = { ...(sess.records || {}) };
+    enrolledStudents.forEach((stu) => {
+      if (!resolvedRecords[stu.id]) {
+        const joinDateStr = stu.joinedAt
+          ? new Date(stu.joinedAt).toISOString().split('T')[0]
+          : '2000-01-01';
+        resolvedRecords[stu.id] = {
+          studentId: stu.id,
+          attendance: 'absent',
+          topicsCoveredForStudent: [],
+          inClassQuizScore: 0,
+          remarks: sess.date >= joinDateStr ? '' : `Joined on ${joinDateStr}`,
+        };
+      }
+    });
+    setAttendanceRecords(resolvedRecords);
     setNextClassLessonPlan(sess.nextClassLessonPlan || '');
     if (sess.inClassExam?.hasExam) {
       setHasInClassExam(true);
@@ -1938,10 +1990,10 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
           {/* Student Attendance & Detailed Recording Roster (Mobile-First Premium UI) */}
           {(() => {
             const presentCount = enrolledStudents.filter(
-              (s) => (attendanceRecords[s.id]?.attendance || 'present') === 'present'
+              (s) => attendanceRecords[s.id]?.attendance === 'present'
             ).length;
             const absentCount = enrolledStudents.filter(
-              (s) => attendanceRecords[s.id]?.attendance === 'absent'
+              (s) => (attendanceRecords[s.id]?.attendance || 'absent') === 'absent'
             ).length;
             const lateCount = enrolledStudents.filter(
               (s) => attendanceRecords[s.id]?.attendance === 'late'
@@ -1964,7 +2016,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                 if (!matchName && !matchRoll && !matchSchool) return false;
               }
               if (attendanceFilter === 'all') return true;
-              const status = attendanceRecords[stu.id]?.attendance || 'present';
+              const status = attendanceRecords[stu.id]?.attendance || 'absent';
               return status === attendanceFilter;
             });
 
@@ -2179,7 +2231,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                     const renderStudentCard = (stu: Student) => {
                       const record = attendanceRecords[stu.id] || {
                         studentId: stu.id,
-                        attendance: 'present',
+                        attendance: 'absent',
                         topicsCoveredForStudent: [],
                         inClassQuizScore: 0,
                         remarks: '',
@@ -2542,7 +2594,7 @@ export const LiveClassSession: React.FC<LiveClassSessionProps> = ({ defaultTab =
                             .sort(([a], [b]) => a.localeCompare(b))
                             .map(([schoolName, schoolStudents]) => {
                               const schoolPresent = schoolStudents.filter(
-                                (s) => (attendanceRecords[s.id]?.attendance || 'present') === 'present'
+                                (s) => attendanceRecords[s.id]?.attendance === 'present'
                               ).length;
 
                               // Check if any homework is assigned to this school (or whole batch)

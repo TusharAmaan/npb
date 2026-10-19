@@ -585,9 +585,60 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const idx = prev.findIndex((s) => s.id === student.id);
       return idx >= 0 ? prev.map((s) => (s.id === student.id ? student : s)) : [student, ...prev];
     });
+
+    // Auto-protect older classes: If student joined on a certain date, any class session for enrolled batches
+    // that took place BEFORE student's joined date must default the student to 'absent', never 'present'.
+    const joinDateStr = student.joinedAt
+      ? new Date(student.joinedAt).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0];
+
+    const updatedPastSessions: ClassSession[] = [];
+
+    setSessions((prevSessions) => {
+      let changed = false;
+      const nextSessions = prevSessions.map((sess) => {
+        if (!student.batchIds?.includes(sess.batchId)) return sess;
+
+        // If the session was conducted before the student joined:
+        if (sess.date < joinDateStr) {
+          const rec = sess.records?.[student.id];
+          // If no record exists, or if auto-defaulted to present without custom quiz/lesson activity:
+          if (
+            !rec ||
+            (rec.attendance === 'present' &&
+              (!rec.topicsCoveredForStudent || rec.topicsCoveredForStudent.length === 0) &&
+              !rec.inClassQuizScore)
+          ) {
+            changed = true;
+            const updatedSess: ClassSession = {
+              ...sess,
+              records: {
+                ...(sess.records || {}),
+                [student.id]: {
+                  studentId: student.id,
+                  attendance: 'absent',
+                  topicsCoveredForStudent: [],
+                  inClassQuizScore: 0,
+                  remarks: rec?.remarks || `Joined on ${joinDateStr}`,
+                },
+              },
+            };
+            updatedPastSessions.push(updatedSess);
+            return updatedSess;
+          }
+        }
+        return sess;
+      });
+
+      return changed ? nextSessions : prevSessions;
+    });
+
     if (isFirebaseConfigured && db) {
       try {
         await firestoreSet(doc(db, 'students', student.id), student);
+        for (const sess of updatedPastSessions) {
+          await firestoreSet(doc(db, 'sessions', sess.id), sess);
+        }
       } catch (err: any) {
         console.warn('[NPB Firestore saveStudent]:', err.message);
       }

@@ -584,19 +584,34 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
             })()}
 
             <div className="p-5 max-h-[60vh] overflow-y-auto space-y-2">
-              {Object.keys(inspectingSession.records || {}).length === 0 ? (
-                <div className="text-center py-8 text-xs text-slate-400">
-                  No individual student records were logged for this session.
-                </div>
-              ) : (
-                Object.values(inspectingSession.records || {}).map((rec) => {
-                  const stu = students.find((s) => s.id === rec.studentId);
+              {(() => {
+                const sessionBatchStudents = students.filter(
+                  (s) => s.isActive && s.batchIds?.includes(inspectingSession.batchId)
+                );
+
+                if (sessionBatchStudents.length === 0 && Object.keys(inspectingSession.records || {}).length === 0) {
+                  return (
+                    <div className="text-center py-8 text-xs text-slate-400">
+                      No individual student records were logged for this session.
+                    </div>
+                  );
+                }
+
+                return sessionBatchStudents.map((stu) => {
+                  const rec = inspectingSession.records?.[stu.id] || {
+                    studentId: stu.id,
+                    attendance: 'absent' as const,
+                    topicsCoveredForStudent: [],
+                    inClassQuizScore: 0,
+                    remarks: `Joined on ${stu.joinedAt ? new Date(stu.joinedAt).toISOString().split('T')[0] : 'later date'}`,
+                  };
+
                   const statusColors = {
                     present: 'bg-weird-green/20 text-emerald-800 dark:text-weird-green border-weird-green/30',
                     absent: 'bg-light-red/20 text-red-800 dark:text-light-red border-light-red/30',
                     late: 'bg-radiant-yellow/20 text-amber-800 dark:text-radiant-yellow border-radiant-yellow/30',
                     excused: 'bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-300',
-                  }[rec.attendance || 'present'];
+                  }[rec.attendance || 'absent'];
 
                   return (
                     <div
@@ -659,8 +674,8 @@ export const ClassRecordsView: React.FC<ClassRecordsViewProps> = ({
                       </div>
                     </div>
                   );
-                })
-              )}
+                });
+              })()}
             </div>
 
             <div className="p-4 border-t border-slate-100 dark:border-dark-border flex justify-between items-center">

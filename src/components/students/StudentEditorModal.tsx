@@ -19,6 +19,7 @@ import {
   FileText,
   Layers,
   Sparkles,
+  Calendar,
 } from 'lucide-react';
 
 interface StudentEditorModalProps {
@@ -50,6 +51,7 @@ export const StudentEditorModal: React.FC<StudentEditorModalProps> = ({
   const [isCustomClass, setIsCustomClass] = useState(false);
   const [section, setSection] = useState('');
   const [shift, setShift] = useState<'Morning' | 'Day' | 'N/A'>('Day');
+  const [admissionDate, setAdmissionDate] = useState<string>('');
   const [batchIds, setBatchIds] = useState<string[]>([]);
   const [guardianName, setGuardianName] = useState('');
   const [guardianPhone, setGuardianPhone] = useState('');
@@ -103,6 +105,11 @@ export const StudentEditorModal: React.FC<StudentEditorModalProps> = ({
 
       setSection(student.section || '');
       setShift(student.shift || 'Day');
+      setAdmissionDate(
+        student.joinedAt
+          ? new Date(student.joinedAt).toISOString().split('T')[0]
+          : new Date().toISOString().split('T')[0]
+      );
       setBatchIds(student.batchIds?.length ? [...student.batchIds] : [batches[0]?.id || '']);
       setGuardianName(student.guardianName || '');
       setGuardianPhone(student.guardianPhone || '');
@@ -122,6 +129,7 @@ export const StudentEditorModal: React.FC<StudentEditorModalProps> = ({
       setCustomClassLevel('');
       setSection('');
       setShift('Day');
+      setAdmissionDate(new Date().toISOString().split('T')[0]);
       setBatchIds(defaultBatchId ? [defaultBatchId] : batches[0] ? [batches[0].id] : []);
       setGuardianName('');
       setGuardianPhone('');
@@ -205,6 +213,10 @@ export const StudentEditorModal: React.FC<StudentEditorModalProps> = ({
     const matchedSchool = schools.find((s) => s.id === schoolId);
     const resolvedClass = isCustomClass ? (customClassLevel.trim() || 'HSC 1st Year') : classLevel;
 
+    const resolvedJoinedAt = admissionDate
+      ? new Date(admissionDate + 'T12:00:00').getTime()
+      : student?.joinedAt || Date.now();
+
     const studentToSave: Student = {
       id: student?.id || `stu-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
       publicRollNo: publicRollNo.trim(),
@@ -220,7 +232,7 @@ export const StudentEditorModal: React.FC<StudentEditorModalProps> = ({
       studentPhone: studentPhone.trim() || undefined,
       notes: notes.trim() || undefined,
       shareToken: shareToken || `npb-${Math.random().toString(36).substring(2, 10)}`,
-      joinedAt: student?.joinedAt || Date.now(),
+      joinedAt: resolvedJoinedAt,
       isActive,
       streakCount: Number(streakCount) || 0,
       manualBonusPoints: Number(manualBonusPoints) || 0,
@@ -470,8 +482,25 @@ export const StudentEditorModal: React.FC<StudentEditorModalProps> = ({
               </div>
             </div>
 
-            {/* Section & Shift */}
-            <div className="grid grid-cols-2 gap-3.5 pt-1">
+            {/* Admission Date, Section & Shift */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-light-indigo" />
+                  <span>Admission Date / ভর্তির তারিখ</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={admissionDate}
+                  onChange={(e) => setAdmissionDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                />
+                <span className="text-[10px] text-slate-400 block mt-0.5">
+                  Classes prior to this date default to Absent
+                </span>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Section / Group (Optional)
