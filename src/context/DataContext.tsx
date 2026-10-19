@@ -133,6 +133,7 @@ interface DataContextType {
   saveOnlineExam: (exam: OnlineExam) => Promise<void>;
   deleteOnlineExam: (examId: string) => Promise<void>;
   submitOnlineExam: (submission: ExamSubmission) => Promise<void>;
+  deleteExamSubmission: (submissionId: string) => Promise<void>;
   regradePassageGap: (
     submissionId: string,
     passageId: string,
@@ -157,214 +158,185 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 const LOCAL_STORAGE_PREFIX = 'npb_db_';
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Helper to load or initialize from localStorage
-  const loadLocal = <T,>(key: string, defaultValue: T): T => {
-    try {
-      const stored = localStorage.getItem(LOCAL_STORAGE_PREFIX + key);
-      return stored ? JSON.parse(stored) : defaultValue;
-    } catch {
-      return defaultValue;
-    }
-  };
-
-  const [schools, setSchools] = useState<School[]>(() => loadLocal('schools', initialSchools));
-  const [batches, setBatches] = useState<Batch[]>(() => loadLocal('batches', initialBatches));
-  const [students, setStudents] = useState<Student[]>(() => loadLocal('students', initialStudents));
+  // Pure Cloud-First State: If Firebase is configured, start clean (empty) so no stale demo data pollutes devices!
+  // If offline/demo mode (!isFirebaseConfigured), use initial seed data as fallbacks.
+  const [schools, setSchools] = useState<School[]>(() => (isFirebaseConfigured ? [] : initialSchools));
+  const [batches, setBatches] = useState<Batch[]>(() => (isFirebaseConfigured ? [] : initialBatches));
+  const [students, setStudents] = useState<Student[]>(() => (isFirebaseConfigured ? [] : initialStudents));
   const [syllabi, setSyllabi] = useState<Record<string, StudentSyllabus>>(() =>
-    loadLocal('syllabi', initialSyllabi)
+    isFirebaseConfigured ? {} : initialSyllabi
   );
   const [syllabusSchemes, setSyllabusSchemes] = useState<SyllabusScheme[]>(() =>
-    loadLocal('syllabusSchemes', initialSyllabusSchemes)
+    isFirebaseConfigured ? [] : initialSyllabusSchemes
   );
-  const [sessions, setSessions] = useState<ClassSession[]>(() => loadLocal('sessions', initialSessions));
-  const [homeworks, setHomeworks] = useState<Homework[]>(() => loadLocal('homeworks', initialHomeworks));
-  const [exams, setExams] = useState<Exam[]>(() => loadLocal('exams', initialExams));
-  const [sheets, setSheets] = useState<LectureSheet[]>(() => loadLocal('sheets', initialSheets));
-  const [bonusLogs, setBonusLogs] = useState<BonusLog[]>(() => loadLocal('bonusLogs', initialBonusLogs));
+  const [sessions, setSessions] = useState<ClassSession[]>(() => (isFirebaseConfigured ? [] : initialSessions));
+  const [homeworks, setHomeworks] = useState<Homework[]>(() => (isFirebaseConfigured ? [] : initialHomeworks));
+  const [exams, setExams] = useState<Exam[]>(() => (isFirebaseConfigured ? [] : initialExams));
+  const [sheets, setSheets] = useState<LectureSheet[]>(() => (isFirebaseConfigured ? [] : initialSheets));
+  const [bonusLogs, setBonusLogs] = useState<BonusLog[]>(() => (isFirebaseConfigured ? [] : initialBonusLogs));
   const [classGoals, setClassGoals] = useState<BatchMonthlyGoal[]>(() =>
-    loadLocal('classGoals', initialClassGoals)
+    isFirebaseConfigured ? [] : initialClassGoals
   );
   const [onlineExams, setOnlineExams] = useState<OnlineExam[]>(() =>
-    loadLocal('onlineExams', initialOnlineExams)
+    isFirebaseConfigured ? [] : initialOnlineExams
   );
   const [examSubmissions, setExamSubmissions] = useState<ExamSubmission[]>(() =>
-    loadLocal('examSubmissions', initialExamSubmissions)
+    isFirebaseConfigured ? [] : initialExamSubmissions
   );
-  const [settings, setSettings] = useState<GlobalSettings>(() =>
-    loadLocal('settings', initialGlobalSettings)
-  );
-  const [isLoading, setIsLoading] = useState(false);
+  const [settings, setSettings] = useState<GlobalSettings>(initialGlobalSettings);
+  const [isLoading, setIsLoading] = useState<boolean>(isFirebaseConfigured);
   const [lastCloudSyncStatus, setLastCloudSyncStatus] = useState<CloudSyncStatus | null>(null);
 
-  // Debounced sync to local storage (unblocks main thread during initial load & Firebase snapshots)
-  const debounceTimers = useRef<Record<string, any>>({});
-  const saveLocalDebounced = (key: string, data: any) => {
-    if (debounceTimers.current[key]) {
-      clearTimeout(debounceTimers.current[key]);
-    }
-    debounceTimers.current[key] = setTimeout(() => {
-      try {
-        localStorage.setItem(LOCAL_STORAGE_PREFIX + key, JSON.stringify(data));
-      } catch {
-        // Storage quota protection
-      }
-    }, 350);
-  };
-
-  useEffect(() => { saveLocalDebounced('schools', schools); }, [schools]);
-  useEffect(() => { saveLocalDebounced('batches', batches); }, [batches]);
-  useEffect(() => { saveLocalDebounced('students', students); }, [students]);
-  useEffect(() => { saveLocalDebounced('syllabi', syllabi); }, [syllabi]);
-  useEffect(() => { saveLocalDebounced('syllabusSchemes', syllabusSchemes); }, [syllabusSchemes]);
-  useEffect(() => { saveLocalDebounced('sessions', sessions); }, [sessions]);
-  useEffect(() => { saveLocalDebounced('homeworks', homeworks); }, [homeworks]);
-  useEffect(() => { saveLocalDebounced('exams', exams); }, [exams]);
-  useEffect(() => { saveLocalDebounced('sheets', sheets); }, [sheets]);
-  useEffect(() => { saveLocalDebounced('bonusLogs', bonusLogs); }, [bonusLogs]);
-  useEffect(() => { saveLocalDebounced('classGoals', classGoals); }, [classGoals]);
-  useEffect(() => { saveLocalDebounced('onlineExams', onlineExams); }, [onlineExams]);
-  useEffect(() => { saveLocalDebounced('examSubmissions', examSubmissions); }, [examSubmissions]);
-  useEffect(() => { saveLocalDebounced('settings', settings); }, [settings]);
-
-  // Safe bidirectional merge helper: ensures local data (e.g. offline/live entries) is NEVER overwritten or lost
-  const mergeCollections = <T extends { id: string }>(localList: T[], remoteList: T[]): T[] => {
-    const remoteMap = new Map<string, T>(remoteList.map((item) => [item.id, item]));
-    const result: T[] = [];
-    const processedIds = new Set<string>();
-
-    for (const remoteItem of remoteList) {
-      const localMatch = localList.find((l) => l.id === remoteItem.id);
-      if (localMatch) {
-        const localTime = (localMatch as any).updatedAt || (localMatch as any).createdAt || 0;
-        const remoteTime = (remoteItem as any).updatedAt || (remoteItem as any).createdAt || 0;
-        result.push(localTime > remoteTime ? localMatch : remoteItem);
-      } else {
-        result.push(remoteItem);
-      }
-      processedIds.add(remoteItem.id);
-    }
-
-    // Preserve any item created locally (e.g. on live site while offline) that is not yet in remote Firestore
-    for (const localItem of localList) {
-      if (!processedIds.has(localItem.id)) {
-        result.push(localItem);
-      }
-    }
-
-    return result;
-  };
-
-  // Firestore Real-Time Subscriptions if Firebase is configured
+  // Clean up legacy localStorage database items so old demo data never survives across devices
   useEffect(() => {
-    if (!isFirebaseConfigured || !db) return;
+    const DB_KEYS = [
+      'schools',
+      'batches',
+      'students',
+      'syllabi',
+      'syllabusSchemes',
+      'sessions',
+      'homeworks',
+      'exams',
+      'sheets',
+      'bonusLogs',
+      'classGoals',
+      'onlineExams',
+      'examSubmissions',
+      'settings',
+    ];
+    try {
+      DB_KEYS.forEach((k) => localStorage.removeItem(LOCAL_STORAGE_PREFIX + k));
+    } catch {
+      // Storage quota or restriction protection
+    }
+  }, []);
+
+  // Firestore Real-Time Subscriptions: 100% direct cloud data without local storage caching
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) {
+      setIsLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    let initialLoads = 0;
+    const requiredLoads = 4; // batches, students, schools, onlineExams
+    const markLoaded = () => {
+      initialLoads++;
+      if (initialLoads >= requiredLoads && isMounted) {
+        setIsLoading(false);
+      }
+    };
+
+    // Safety timeout: ensure loader never blocks UI for more than 1.5s
+    const loadTimeout = setTimeout(() => {
+      if (isMounted) setIsLoading(false);
+    }, 1500);
 
     try {
       const unsubBatches = onSnapshot(
         collection(db, 'batches'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as Batch);
-            setBatches((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as Batch);
+          setBatches(list);
+          markLoaded();
         },
-        (err) => console.info('[NPB Data] Batches cloud sync:', err.message)
+        (err) => {
+          console.info('[NPB Data] Batches cloud sync:', err.message);
+          markLoaded();
+        }
       );
+
       const unsubSchools = onSnapshot(
         collection(db, 'schools'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as School);
-            setSchools((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as School);
+          setSchools(list);
+          markLoaded();
         },
-        (err) => console.info('[NPB Data] Schools cloud sync:', err.message)
+        (err) => {
+          console.info('[NPB Data] Schools cloud sync:', err.message);
+          markLoaded();
+        }
       );
+
       const unsubStudents = onSnapshot(
         collection(db, 'students'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as Student);
-            setStudents((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as Student);
+          setStudents(list);
+          markLoaded();
         },
-        (err) => console.info('[NPB Data] Students cloud sync:', err.message)
+        (err) => {
+          console.info('[NPB Data] Students cloud sync:', err.message);
+          markLoaded();
+        }
       );
+
       const unsubSessions = onSnapshot(
         collection(db, 'classSessions'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as ClassSession);
-            setSessions((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as ClassSession);
+          setSessions(list);
         },
         (err) => console.info('[NPB Data] Sessions cloud sync:', err.message)
       );
+
       const unsubHomeworks = onSnapshot(
         collection(db, 'homeworks'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as Homework);
-            setHomeworks((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as Homework);
+          setHomeworks(list);
         },
         (err) => console.info('[NPB Data] Homeworks cloud sync:', err.message)
       );
+
       const unsubExams = onSnapshot(
         collection(db, 'exams'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as Exam);
-            setExams((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as Exam);
+          setExams(list);
         },
         (err) => console.info('[NPB Data] Exams cloud sync:', err.message)
       );
+
       const unsubSheets = onSnapshot(
         collection(db, 'lectureSheets'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as LectureSheet);
-            setSheets((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as LectureSheet);
+          setSheets(list);
         },
         (err) => console.info('[NPB Data] Sheets cloud sync:', err.message)
       );
+
       const unsubSyllabusSchemes = onSnapshot(
         collection(db, 'syllabusSchemes'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as SyllabusScheme);
-            setSyllabusSchemes((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as SyllabusScheme);
+          setSyllabusSchemes(list);
         },
         (err) => console.info('[NPB Data] Syllabus schemes cloud sync:', err.message)
       );
+
       const unsubBonus = onSnapshot(
         collection(db, 'bonusLogs'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as BonusLog);
-            setBonusLogs((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as BonusLog);
+          setBonusLogs(list);
         },
         (err) => console.info('[NPB Data] Bonus logs cloud sync:', err.message)
       );
+
       const unsubSyllabi = onSnapshot(
         collection(db, 'studentSyllabi'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            setSyllabi((prev) => {
-              const merged = { ...prev };
-              snapshot.docs.forEach((docSnap) => {
-                const remoteSyl = docSnap.data() as StudentSyllabus;
-                const localSyl = prev[remoteSyl.studentId];
-                if (!localSyl || (remoteSyl.updatedAt || 0) >= (localSyl.updatedAt || 0)) {
-                  merged[remoteSyl.studentId] = remoteSyl;
-                }
-              });
-              return merged;
-            });
-          }
+          const sylMap: Record<string, StudentSyllabus> = {};
+          snapshot.docs.forEach((docSnap) => {
+            const remoteSyl = docSnap.data() as StudentSyllabus;
+            sylMap[remoteSyl.studentId] = remoteSyl;
+          });
+          setSyllabi(sylMap);
         },
         (err) => console.info('[NPB Data] Student syllabi cloud sync:', err.message)
       );
@@ -372,10 +344,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const unsubGoals = onSnapshot(
         collection(db, 'classGoals'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as BatchMonthlyGoal);
-            setClassGoals((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as BatchMonthlyGoal);
+          setClassGoals(list);
         },
         (err) => console.info('[NPB Data] ClassGoals cloud sync:', err.message)
       );
@@ -383,26 +353,38 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const unsubOnlineExams = onSnapshot(
         collection(db, 'onlineExams'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as OnlineExam);
-            setOnlineExams((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as OnlineExam);
+          setOnlineExams(list);
+          markLoaded();
         },
-        (err) => console.info('[NPB Data] OnlineExams cloud sync:', err.message)
+        (err) => {
+          console.info('[NPB Data] OnlineExams cloud sync:', err.message);
+          markLoaded();
+        }
       );
 
       const unsubExamSubmissions = onSnapshot(
         collection(db, 'examSubmissions'),
         (snapshot: QuerySnapshot<DocumentData>) => {
-          if (!snapshot.empty) {
-            const list = snapshot.docs.map((d: DocumentData) => d.data() as ExamSubmission);
-            setExamSubmissions((prev) => mergeCollections(prev, list));
-          }
+          const list = snapshot.docs.map((d: DocumentData) => d.data() as ExamSubmission);
+          setExamSubmissions(list);
         },
         (err) => console.info('[NPB Data] ExamSubmissions cloud sync:', err.message)
       );
 
+      const unsubSettings = onSnapshot(
+        doc(db, 'settings', 'global'),
+        (docSnap) => {
+          if (docSnap.exists()) {
+            setSettings(docSnap.data() as GlobalSettings);
+          }
+        },
+        (err) => console.info('[NPB Data] Settings cloud sync:', err.message)
+      );
+
       return () => {
+        isMounted = false;
+        clearTimeout(loadTimeout);
         unsubBatches();
         unsubSchools();
         unsubStudents();
@@ -416,9 +398,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubGoals();
         unsubOnlineExams();
         unsubExamSubmissions();
+        unsubSettings();
       };
     } catch (err) {
       console.warn('[NPB Firestore] Subscription error:', err);
+      setIsLoading(false);
     }
   }, []);
 
@@ -543,27 +527,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, count: 0, error: errMsg };
     }
   };
-
-  // Auto-sync initial data if Firestore is empty and user is logged in as tushar.aman05@gmail.com
-  useEffect(() => {
-    if (!isFirebaseConfigured || !db || !auth) return;
-
-    const unsubAuth = auth.onAuthStateChanged(async (user: any) => {
-      if (user && user.email?.toLowerCase() === 'tushar.aman05@gmail.com' && db) {
-        try {
-          const snapshot = await getDocs(collection(db, 'batches'));
-          if (snapshot.empty && batches.length > 0) {
-            console.log('[NPB Firebase] Initial cloud database population triggered for tushar.aman05@gmail.com...');
-            await pushAllDataToFirestore();
-          }
-        } catch (err) {
-          console.info('[NPB Firebase] Auto-sync check:', err);
-        }
-      }
-    });
-
-    return () => unsubAuth();
-  }, [batches.length]);
 
   // --- Actions ---
 
@@ -1658,7 +1621,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const submitOnlineExam = async (submission: ExamSubmission) => {
+  const submitOnlineExam = async (submission: ExamSubmission): Promise<void> => {
+    // Optimistic local state update
     setExamSubmissions((prev) => {
       const idx = prev.findIndex((s) => s.id === submission.id);
       return idx >= 0 ? prev.map((s) => (s.id === submission.id ? submission : s)) : [submission, ...prev];
@@ -1666,8 +1630,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isFirebaseConfigured && db) {
       try {
         await firestoreSet(doc(db, 'examSubmissions', submission.id), submission);
+        console.log('[NPB Firestore submitOnlineExam] Saved successfully:', submission.id);
       } catch (err: any) {
-        console.warn('[NPB Firestore submitOnlineExam]:', err.message);
+        console.error('[NPB Firestore submitOnlineExam ERROR]:', err);
+        throw err;
+      }
+    }
+  };
+
+  const deleteExamSubmission = async (submissionId: string): Promise<void> => {
+    setExamSubmissions((prev) => prev.filter((s) => s.id !== submissionId));
+    if (isFirebaseConfigured && db) {
+      try {
+        await deleteDoc(doc(db, 'examSubmissions', submissionId));
+        console.log('[NPB Firestore deleteExamSubmission] Deleted successfully:', submissionId);
+      } catch (err: any) {
+        console.error('[NPB Firestore deleteExamSubmission ERROR]:', err);
       }
     }
   };
@@ -1990,6 +1968,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveOnlineExam,
         deleteOnlineExam,
         submitOnlineExam,
+        deleteExamSubmission,
         regradePassageGap,
         syncOnlineExamToBatchMarks,
         pushAllDataToFirestore,

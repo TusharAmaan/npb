@@ -140,6 +140,7 @@ export const StudentExamPortal: React.FC = () => {
 
   // Completed Submission Record
   const [submissionResult, setSubmissionResult] = useState<ExamSubmission | null>(null);
+  const [cloudSyncFailed, setCloudSyncFailed] = useState<boolean>(false);
   const [copiedShareLink, setCopiedShareLink] = useState<boolean>(false);
 
   // Canvas ref for score image generation
@@ -381,7 +382,14 @@ export const StudentExamPortal: React.FC = () => {
     };
 
     // Save to Firestore and local state
-    await submitOnlineExam(submission);
+    try {
+      await submitOnlineExam(submission);
+      setCloudSyncFailed(false);
+    } catch (err: any) {
+      console.warn('[NPB StudentExamPortal] Cloud submission warning:', err);
+      setCloudSyncFailed(true);
+    }
+
     setSubmissionResult(submission);
     setPhase('submitted');
     setIsSubmitting(false);
@@ -1152,6 +1160,36 @@ export const StudentExamPortal: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {/* Cloud Sync Notice if security rules rejected public write */}
+            {cloudSyncFailed && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs text-left flex items-start gap-3 max-w-md mx-auto">
+                <AlertTriangle className="w-5 h-5 shrink-0 text-amber-500 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold">Cloud Sync Pending</p>
+                  <p className="text-[11px] opacity-90 leading-relaxed">
+                    Your answers were graded on your device, but could not be sent to the live cloud database due to Firestore permissions. Please inform your tutor to publish the updated Firebase Rules, or send a screenshot of this scorecard.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!submissionResult) return;
+                      try {
+                        await submitOnlineExam(submissionResult);
+                        setCloudSyncFailed(false);
+                        alert('Cloud sync succeeded! Your score is now saved in the database.');
+                      } catch {
+                        alert('Cloud write still blocked. Please ask tutor to publish firestore.rules.');
+                      }
+                    }}
+                    className="mt-1 px-3 py-1 rounded-lg text-[11px] font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 inline-flex items-center gap-1 transition-colors"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Retry Cloud Upload</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Action Bar: Download Scorecard & Social Share */}
             <div className="pt-2 space-y-3">

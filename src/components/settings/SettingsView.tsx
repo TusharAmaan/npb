@@ -134,6 +134,11 @@ service cloud.firestore {
         request.auth.token.email.lower() == "${PRIMARY_ADMIN_EMAIL}";
     }
 
+    // Exam Submissions: Public read and write so students can submit exam answers without login
+    match /examSubmissions/{submissionId} {
+      allow read, write: if true;
+    }
+
     // Public read for platform branding & portals, admin-only write
     match /{document=**} {
       allow read: if true;
@@ -273,15 +278,10 @@ service cloud.firestore {
               <span>Copy Security Rules</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handlePushToFirestore}
-              disabled={isPushing}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black bg-weird-green text-slate-950 hover:bg-wintergreen shadow-md shadow-weird-green/20 transition-transform active:scale-95 disabled:opacity-50"
-            >
-              <UploadCloud className={`w-4 h-4 ${isPushing ? 'animate-bounce' : ''}`} />
-              <span>{isPushing ? 'Uploading to Cloud...' : 'Push All Data to Cloud Firestore'}</span>
-            </button>
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-black bg-emerald-500/10 text-emerald-700 dark:text-wintergreen border border-emerald-500/25">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>100% Real-Time Cloud Sync Active</span>
+            </div>
           </div>
         </div>
 

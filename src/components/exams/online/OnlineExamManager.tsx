@@ -55,6 +55,7 @@ export const OnlineExamManager: React.FC = () => {
     examSubmissions,
     saveOnlineExam,
     deleteOnlineExam,
+    deleteExamSubmission,
     regradePassageGap,
     syncOnlineExamToBatchMarks,
   } = useData();
@@ -65,6 +66,7 @@ export const OnlineExamManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'exams' | 'submissions'>('exams');
   const [selectedExamId, setSelectedExamId] = useState<string>(onlineExams[0]?.id || '');
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [copiedRules, setCopiedRules] = useState<boolean>(false);
   const [syncingExamId, setSyncingExamId] = useState<string | null>(null);
 
   // Filter & Search
@@ -198,13 +200,62 @@ export const OnlineExamManager: React.FC = () => {
     });
   }, [onlineExams, searchQuery, batchFilter]);
 
-  // Submissions for Active Exam
+  // Submissions for Active Exam: matches by either examId or examCode
   const examSubmissionsList = useMemo(() => {
     if (!activeExam) return [];
+    const activeExamId = activeExam.id.toLowerCase().trim();
+    const activeExamCode = activeExam.examCode.toLowerCase().trim();
     return examSubmissions
-      .filter((s) => s.examId === activeExam.id)
+      .filter((s) => {
+        const sExamId = (s.examId || '').toLowerCase().trim();
+        const sExamCode = (s.examCode || '').toLowerCase().trim();
+        return (
+          sExamId === activeExamId ||
+          sExamCode === activeExamCode ||
+          sExamId === activeExamCode ||
+          sExamCode === activeExamId
+        );
+      })
       .sort((a, b) => b.totalMarksObtained - a.totalMarksObtained);
   }, [examSubmissions, activeExam]);
+
+  const handleDeleteSubmission = async (subId: string, studentName: string) => {
+    const isConfirmed = await confirm({
+      title: 'Delete Exam Submission',
+      message: `Are you sure you want to delete the submission for "${studentName}"? This will permanently remove it from Cloud Firestore.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (isConfirmed) {
+      await deleteExamSubmission(subId);
+      if (inspectSubmission?.id === subId) {
+        setInspectSubmission(null);
+      }
+    }
+  };
+
+  const handleCopySecurityRules = () => {
+    const rules = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isTusharAdmin() {
+      return request.auth != null && 
+        request.auth.token.email.lower() == "tushar.aman05@gmail.com";
+    }
+    match /examSubmissions/{submissionId} {
+      allow read, write: if true;
+    }
+    match /{document=**} {
+      allow read: if true;
+      allow write: if isTusharAdmin();
+    }
+  }
+}`;
+    navigator.clipboard.writeText(rules);
+    setCopiedRules(true);
+    setTimeout(() => setCopiedRules(false), 3000);
+  };
 
   // Open Create Modal with clean defaults (defaulting to pure MCQ preset so tutor is never forced into passages)
   const handleOpenCreateModal = () => {
@@ -716,14 +767,61 @@ _Best of luck with your preparation!_`;
 
           {/* Submissions Table */}
           {examSubmissionsList.length === 0 ? (
-            <div className="bg-white dark:bg-dark-surface p-12 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-center space-y-2">
+            <div className="bg-white dark:bg-dark-surface p-8 sm:p-12 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-center space-y-4">
               <Users className="w-10 h-10 text-slate-400 mx-auto opacity-50" />
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                No student submissions recorded for this exam yet.
-              </p>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Share the exam link or WhatsApp notice with your batch students to start collecting submissions.
-              </p>
+              <div className="space-y-1">
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  No student submissions recorded for this exam yet.
+                </p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Share the exam link or WhatsApp notice with your batch students to start collecting submissions in real time.
+                </p>
+              </div>
+
+              {/* Helpful Firebase Rules Notice Card */}
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 max-w-lg mx-auto text-left space-y-2.5">
+                <div className="flex items-start gap-2.5">
+                  <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="space-y-1 text-xs">
+                    <p className="font-extrabold text-slate-900 dark:text-white">
+                      Students submitted but marks aren&apos;t appearing?
+                    </p>
+                    <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-[11px]">
+                      Because students take exams without logging in, your Google Cloud Firestore rules must allow public creation for <code className="font-mono font-bold text-amber-600 dark:text-amber-400">examSubmissions</code>. Otherwise, Firebase rejects public student scores.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-500/20">
+                  <button
+                    type="button"
+                    onClick={handleCopySecurityRules}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 inline-flex items-center gap-1.5 transition-colors shadow-2xs"
+                  >
+                    {copiedRules ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>Rules Copied to Clipboard!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Updated Firebase Rules</span>
+                      </>
+                    )}
+                  </button>
+
+                  <a
+                    href="https://console.firebase.google.com/project/batchmgt-6f7ad/firestore/rules"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open Firebase Console ↗</span>
+                  </a>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="bg-white dark:bg-dark-surface rounded-2xl border border-slate-200/80 dark:border-dark-border overflow-hidden shadow-xs">
@@ -739,7 +837,7 @@ _Best of luck with your preparation!_`;
                       <th className="p-3.5">Tab Switches</th>
                       <th className="p-3.5">Time Spent</th>
                       <th className="p-3.5">Submitted</th>
-                      <th className="p-3.5 pr-4 text-right">Review</th>
+                      <th className="p-3.5 pr-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -817,13 +915,22 @@ _Best of luck with your preparation!_`;
                             })}
                           </td>
                           <td className="p-3.5 pr-4 text-right">
-                            <button
-                              onClick={() => setInspectSubmission(sub)}
-                              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 inline-flex items-center gap-1"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>Inspect Sheet</span>
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => setInspectSubmission(sub)}
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 inline-flex items-center gap-1"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Inspect</span>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSubmission(sub.id, sub.studentName)}
+                                className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                                title="Delete this submission"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -953,7 +1060,15 @@ _Best of luck with your preparation!_`;
               })}
             </div>
 
-            <div className="pt-3 border-t border-slate-100 dark:border-dark-border text-right">
+            <div className="pt-3 border-t border-slate-100 dark:border-dark-border flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => handleDeleteSubmission(inspectSubmission.id, inspectSubmission.studentName)}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-red-50 hover:bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 inline-flex items-center gap-1.5 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Submission</span>
+              </button>
               <button
                 onClick={() => setInspectSubmission(null)}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900"

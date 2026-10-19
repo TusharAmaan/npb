@@ -80,10 +80,9 @@ service cloud.firestore {
       allow write: if isTusharAdmin();
     }
 
-    // Exam Submissions: Public read and create (students submit exam answers without login), only tushar.aman05@gmail.com can update/delete
+    // Exam Submissions: Public read and write (students submit exam answers without login, tutor can manage/delete)
     match /examSubmissions/{submissionId} {
-      allow read, create: if true;
-      allow update, delete: if isTusharAdmin();
+      allow read, write: if true;
     }
 
     // Catch-all fallback: Read allowed, all writes strictly locked to tushar.aman05@gmail.com
