@@ -31,6 +31,7 @@ import {
   ExternalLink,
   Copy,
   Check,
+  X,
 } from 'lucide-react';
 
 export const StudentExamPortal: React.FC = () => {
@@ -143,6 +144,15 @@ export const StudentExamPortal: React.FC = () => {
   const [cloudSyncFailed, setCloudSyncFailed] = useState<boolean>(false);
   const [copiedShareLink, setCopiedShareLink] = useState<boolean>(false);
 
+  // Custom Modal & Alert Dialog States (Replacing native browser confirm & alert)
+  const [showSubmitModal, setShowSubmitModal] = useState<boolean>(false);
+  const [customAlert, setCustomAlert] = useState<{
+    title: string;
+    message: string;
+    type?: 'info' | 'warning' | 'error' | 'success';
+  } | null>(null);
+  const [formErrors, setFormErrors] = useState<{ name?: string; mobile?: string }>({});
+
   // Canvas ref for score image generation
   const scorecardCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [scorecardImageUrl, setScorecardImageUrl] = useState<string | null>(null);
@@ -184,12 +194,18 @@ export const StudentExamPortal: React.FC = () => {
           const nextCount = prev + 1;
 
           if (exam.tabSwitchPenalty === 'auto_submit') {
-            alert('⚠️ Tab switch detected! Your exam is being submitted automatically.');
+            setCustomAlert({
+              title: 'Tab Switch Detected',
+              message: 'Leaving the exam window is not permitted. Your exam paper is being submitted automatically.',
+              type: 'error',
+            });
             handleSubmitExamFinal(nextCount);
           } else if (exam.tabSwitchPenalty === 'reset_exam') {
-            alert(
-              '⚠️ Tab switch detected! / সতর্কতা: ট্যাব পরিবর্তনের কারণে আপনার পরীক্ষার উত্তরপত্র রিসেট করা হলো।'
-            );
+            setCustomAlert({
+              title: 'Tab Switch Warning',
+              message: 'সতর্কতা: ট্যাব পরিবর্তনের কারণে আপনার পরীক্ষার উত্তরপত্র রিসেট করা হলো। Please do not leave the exam page.',
+              type: 'warning',
+            });
             setPassageAnswers({});
             setMcqAnswers({});
           } else {
@@ -212,7 +228,11 @@ export const StudentExamPortal: React.FC = () => {
     if (phase !== 'taking' || !exam || exam.durationMinutes <= 0) return;
 
     if (timeRemainingSeconds <= 0) {
-      alert('⏰ Time is up! / পরীক্ষার নির্ধারিত সময় শেষ। Your exam is being submitted.');
+      setCustomAlert({
+        title: 'Time is Up! / পরীক্ষার সময় শেষ',
+        message: 'The allocated exam duration has ended. Your exam paper is being submitted automatically.',
+        type: 'warning',
+      });
       handleSubmitExamFinal(tabSwitchCount);
       return;
     }
@@ -226,14 +246,20 @@ export const StudentExamPortal: React.FC = () => {
 
   // Start Exam
   const handleStartExam = () => {
+    const errs: { name?: string; mobile?: string } = {};
     if (!studentName.trim()) {
-      alert('Please enter your full name to start the exam.');
+      errs.name = 'Please enter your full name to start the exam.';
+    }
+    const cleanPhone = studentMobile.replace(/\D/g, '');
+    if (!studentMobile.trim() || cleanPhone.length < 10) {
+      errs.mobile = 'Please enter a valid 11-digit mobile phone number.';
+    }
+
+    if (Object.keys(errs).length > 0) {
+      setFormErrors(errs);
       return;
     }
-    if (!studentMobile.trim() || studentMobile.replace(/\D/g, '').length < 10) {
-      alert('Please enter a valid 11-digit mobile phone number.');
-      return;
-    }
+    setFormErrors({});
 
     // Remember in localStorage for next time
     try {
@@ -737,10 +763,23 @@ export const StudentExamPortal: React.FC = () => {
                   type="text"
                   required
                   value={studentName}
-                  onChange={(e) => setStudentName(e.target.value)}
+                  onChange={(e) => {
+                    setStudentName(e.target.value);
+                    if (formErrors.name) setFormErrors((prev) => ({ ...prev, name: undefined }));
+                  }}
                   placeholder="Enter your full name (e.g. Tanzim Ahmed)"
-                  className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className={`w-full px-4 py-3 rounded-xl text-base sm:text-sm font-semibold border transition-colors ${
+                    formErrors.name
+                      ? 'border-red-500 bg-red-50/50 dark:bg-red-950/20 text-red-900 dark:text-red-200'
+                      : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white'
+                  } focus:outline-none focus:ring-2 focus:ring-amber-500`}
                 />
+                {formErrors.name && (
+                  <p className="text-xs text-red-500 font-bold mt-1 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{formErrors.name}</span>
+                  </p>
+                )}
               </div>
 
               <div>
@@ -751,13 +790,27 @@ export const StudentExamPortal: React.FC = () => {
                   type="tel"
                   required
                   value={studentMobile}
-                  onChange={(e) => setStudentMobile(e.target.value)}
+                  onChange={(e) => {
+                    setStudentMobile(e.target.value);
+                    if (formErrors.mobile) setFormErrors((prev) => ({ ...prev, mobile: undefined }));
+                  }}
                   placeholder="01XXXXXXXXX"
-                  className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono tracking-wider"
+                  className={`w-full px-4 py-3 rounded-xl text-base sm:text-sm font-semibold font-mono tracking-wider border transition-colors ${
+                    formErrors.mobile
+                      ? 'border-red-500 bg-red-50/50 dark:bg-red-950/20 text-red-900 dark:text-red-200'
+                      : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white'
+                  } focus:outline-none focus:ring-2 focus:ring-amber-500`}
                 />
-                <span className="text-[11px] text-slate-400 block mt-1">
-                  Used to link your score to your report card & leaderboard
-                </span>
+                {formErrors.mobile ? (
+                  <p className="text-xs text-red-500 font-bold mt-1 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{formErrors.mobile}</span>
+                  </p>
+                ) : (
+                  <span className="text-[11px] text-slate-400 block mt-1">
+                    Used to link your score to your report card &amp; leaderboard
+                  </span>
+                )}
               </div>
             </div>
 
@@ -777,59 +830,67 @@ export const StudentExamPortal: React.FC = () => {
           PHASE 2: ACTIVE EXAM SCREEN
          ------------------------------------------------------------- */}
       {phase === 'taking' && (
-        <div className="max-w-4xl mx-auto pt-4 px-3 sm:px-6 space-y-6">
-          {/* Sticky Header Strip */}
-          <div className="sticky top-2 z-30 bg-white/95 dark:bg-dark-surface/95 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-dark-border p-3 sm:p-4 shadow-md flex items-center justify-between gap-3">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                {studentName} ({exam.examCode})
-              </span>
-              <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate block max-w-xs sm:max-w-md">
-                {exam.title}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2 sm:gap-4">
-              {/* Progress Count */}
-              <div className="text-right hidden sm:block">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Progress
+        <div className="max-w-3xl mx-auto pt-2 sm:pt-4 px-2.5 sm:px-6 space-y-4 sm:space-y-6">
+          {/* Responsive Sticky Header Strip */}
+          <div className="sticky top-0 sm:top-2 z-30 bg-white/95 dark:bg-[#1a1a20]/95 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-white/10 p-2.5 sm:p-3.5 shadow-sm transition-all overflow-hidden">
+            <div className="flex items-center justify-between gap-2 sm:gap-3">
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-500 block truncate">
+                  {studentName || 'Student'} • {exam.examCode}
                 </span>
-                <span className="text-xs font-black text-slate-700 dark:text-slate-300">
-                  {totalAnsweredCount} / {totalQuestionsCount} Answered
+                <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate block">
+                  {exam.title}
                 </span>
               </div>
 
-              {/* Countdown Timer */}
-              {exam.durationMinutes > 0 && (
-                <div
-                  className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 font-black text-xs sm:text-sm ${
-                    timeRemainingSeconds < 120
-                      ? 'bg-red-500 text-white border-red-600 animate-pulse'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  <Clock className="w-4 h-4" />
-                  <span>
-                    {String(Math.floor(timeRemainingSeconds / 60)).padStart(2, '0')}:
-                    {String(timeRemainingSeconds % 60).padStart(2, '0')}
+              <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+                {/* Progress Pill */}
+                <div className="px-2 py-1 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200/70 dark:border-white/5 text-center font-mono">
+                  <span className="text-[11px] sm:text-xs font-black text-slate-700 dark:text-slate-300">
+                    {totalAnsweredCount}/{totalQuestionsCount}
                   </span>
                 </div>
-              )}
 
-              {/* Submit Button */}
-              <button
-                onClick={() => {
-                  if (confirm('Are you sure you want to finalize and submit your exam paper?')) {
-                    handleSubmitExamFinal();
-                  }
+                {/* Countdown Timer */}
+                {exam.durationMinutes > 0 && (
+                  <div
+                    className={`px-2 py-1 sm:px-2.5 sm:py-1 rounded-xl border flex items-center gap-1 font-mono font-black text-xs sm:text-sm ${
+                      timeRemainingSeconds < 120
+                        ? 'bg-red-500 text-white border-red-600 animate-pulse'
+                        : 'bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white border-slate-200 dark:border-white/10'
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {String(Math.floor(timeRemainingSeconds / 60)).padStart(2, '0')}:
+                      {String(timeRemainingSeconds % 60).padStart(2, '0')}
+                    </span>
+                  </div>
+                )}
+
+                {/* Submit Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowSubmitModal(true)}
+                  disabled={isSubmitting}
+                  className="px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl text-xs sm:text-sm font-black bg-weird-green hover:bg-wintergreen text-slate-950 shadow-xs transition-all active:scale-95 flex items-center gap-1"
+                >
+                  <Send className="w-3.5 h-3.5 shrink-0" />
+                  <span>Submit</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Micro Live Progress Line */}
+            <div className="w-full h-1 bg-slate-100 dark:bg-white/5 mt-2 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 rounded-full ${
+                  totalAnsweredCount === totalQuestionsCount ? 'bg-emerald-500' : 'bg-amber-500'
+                }`}
+                style={{
+                  width: `${totalQuestionsCount > 0 ? (totalAnsweredCount / totalQuestionsCount) * 100 : 0}%`,
                 }}
-                disabled={isSubmitting}
-                className="px-4 py-2 rounded-xl text-xs font-black bg-weird-green hover:bg-wintergreen text-slate-950 shadow-md transition-all flex items-center gap-1.5"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>Submit</span>
-              </button>
+              />
             </div>
           </div>
 
@@ -863,7 +924,7 @@ export const StudentExamPortal: React.FC = () => {
             return (
               <div
                 key={passage.id}
-                className="bg-white dark:bg-dark-surface rounded-3xl border border-slate-200 dark:border-dark-border p-5 sm:p-7 shadow-xs space-y-5"
+                className="bg-white dark:bg-dark-surface rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-dark-border p-4 sm:p-7 shadow-xs space-y-4 sm:space-y-5"
               >
                 {/* Passage Header */}
                 <div className="border-b border-slate-100 dark:border-dark-border pb-3">
@@ -887,20 +948,20 @@ export const StudentExamPortal: React.FC = () => {
 
                 {/* CLUE BANK (When passageType === 'with_clues') */}
                 {passage.passageType === 'with_clues' && passage.clues.length > 0 && (
-                  <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/25 border-2 border-dashed border-amber-300 dark:border-amber-800/60 space-y-2.5">
-                    <div className="flex items-center justify-between">
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/25 border-2 border-dashed border-amber-300 dark:border-amber-800/60 space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
                       <span className="text-[11px] font-black uppercase text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Clue Box (Drag & Drop or Tap to Place in Answer Box):</span>
+                        <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span>Clue Box: Tap a word, then tap a gap</span>
                       </span>
                       {selectedClueWord?.passageId === passage.id && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500 text-slate-950">
-                          Selected: &quot;{selectedClueWord.word}&quot; (Now tap a gap box below)
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 animate-pulse">
+                          Selected: &quot;{selectedClueWord.word}&quot;
                         </span>
                       )}
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
                       {passage.clues.map((word, wIdx) => {
                         const isSelected =
                           selectedClueWord?.passageId === passage.id &&
@@ -920,7 +981,7 @@ export const StudentExamPortal: React.FC = () => {
                                 setSelectedClueWord({ passageId: passage.id, word });
                               }
                             }}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer select-none transition-all shadow-2xs border ${
+                            className={`px-3 py-1.5 min-h-[38px] flex items-center justify-center rounded-xl text-xs sm:text-sm font-black cursor-pointer select-none transition-all shadow-2xs border active:scale-95 touch-manipulation ${
                               isSelected
                                 ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-500/40 scale-105'
                                 : 'bg-white dark:bg-dark-surface border-amber-200 dark:border-amber-900/40 text-slate-800 dark:text-slate-200 hover:border-amber-500 hover:scale-102'
@@ -935,7 +996,7 @@ export const StudentExamPortal: React.FC = () => {
                 )}
 
                 {/* PASSAGE TEXT DISPLAY */}
-                <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 leading-loose text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 text-justify">
+                <div className="p-3.5 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 leading-relaxed sm:leading-loose text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200 text-justify">
                   {passage.passageText}
                 </div>
 
@@ -952,7 +1013,7 @@ export const StudentExamPortal: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-2.5">
                     {passage.gaps.map((gap) => {
                       const value = currentPAnswers[gap.id] || '';
 
@@ -972,9 +1033,9 @@ export const StudentExamPortal: React.FC = () => {
                               handlePlaceClueIntoGap(passage.id, gap.id, selectedClueWord.word);
                             }
                           }}
-                          className={`p-2 rounded-xl border transition-all ${
+                          className={`p-2 sm:p-2.5 rounded-xl border transition-all ${
                             selectedClueWord && selectedClueWord.passageId === passage.id
-                              ? 'border-amber-400 bg-amber-50/40 dark:bg-amber-950/20 cursor-pointer'
+                              ? 'border-amber-400 bg-amber-50/40 dark:bg-amber-950/20 cursor-pointer ring-2 ring-amber-400/30'
                               : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-surface'
                           }`}
                         >
@@ -990,8 +1051,8 @@ export const StudentExamPortal: React.FC = () => {
                             onChange={(e) =>
                               handlePassageGapChange(passage.id, gap.id, e.target.value)
                             }
-                            placeholder="Type or drop word..."
-                            className="w-full px-2.5 py-1.5 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-1 focus:ring-amber-500"
+                            placeholder="Type or tap..."
+                            className="w-full px-2.5 py-2 sm:py-1.5 rounded-lg text-base sm:text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-1 focus:ring-amber-500"
                           />
                         </div>
                       );
@@ -1004,7 +1065,7 @@ export const StudentExamPortal: React.FC = () => {
 
           {/* SECTION 2: MULTIPLE CHOICE QUESTIONS (MCQ) */}
           {exam.mcqs.length > 0 && (
-            <div className="bg-white dark:bg-dark-surface rounded-3xl border border-slate-200 dark:border-dark-border p-5 sm:p-7 shadow-xs space-y-6">
+            <div className="bg-white dark:bg-dark-surface rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-dark-border p-4 sm:p-7 shadow-xs space-y-4 sm:space-y-6">
               <div className="border-b border-slate-100 dark:border-dark-border pb-3 flex items-center justify-between">
                 <div>
                   <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
@@ -1019,14 +1080,14 @@ export const StudentExamPortal: React.FC = () => {
                 </span>
               </div>
 
-              <div className="space-y-6">
+              <div className="space-y-4 sm:space-y-6">
                 {exam.mcqs.map((q, qIdx) => {
                   const selected = mcqAnswers[q.id] || [];
 
                   return (
                     <div
                       key={q.id}
-                      className="p-4 sm:p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 space-y-3"
+                      className="p-3.5 sm:p-5 rounded-2xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 space-y-3"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-start gap-2">
@@ -1046,22 +1107,23 @@ export const StudentExamPortal: React.FC = () => {
                         </span>
                       )}
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
                         {q.options.map((opt) => {
                           const isChosen = selected.includes(opt.id);
 
                           return (
-                            <div
+                            <button
+                              type="button"
                               key={opt.id}
                               onClick={() => handleToggleMcqOption(q, opt.id)}
-                              className={`p-3 rounded-xl border text-xs font-bold cursor-pointer transition-all flex items-center gap-2.5 ${
+                              className={`p-3 sm:p-3.5 min-h-[46px] rounded-xl border text-xs sm:text-sm font-bold cursor-pointer transition-all flex items-center gap-2.5 text-left active:scale-[0.99] touch-manipulation ${
                                 isChosen
                                   ? 'bg-sky-500 text-white border-sky-600 shadow-sm'
                                   : 'bg-white dark:bg-dark-surface border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-sky-300'
                               }`}
                             >
                               <span
-                                className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black border ${
+                                className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black border shrink-0 ${
                                   isChosen
                                     ? 'bg-white text-sky-700 border-white'
                                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
@@ -1069,8 +1131,9 @@ export const StudentExamPortal: React.FC = () => {
                               >
                                 {opt.label}
                               </span>
-                              <span>{opt.text}</span>
-                            </div>
+                              <span className="flex-1 leading-snug">{opt.text}</span>
+                              {isChosen && <Check className="w-4 h-4 shrink-0 text-white" />}
+                            </button>
                           );
                         })}
                       </div>
@@ -1082,26 +1145,23 @@ export const StudentExamPortal: React.FC = () => {
           )}
 
           {/* Bottom Submit Bar */}
-          <div className="p-4 rounded-2xl bg-white dark:bg-dark-surface border border-slate-200 dark:border-dark-border shadow-lg flex items-center justify-between gap-3">
+          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-dark-surface border border-slate-200 dark:border-dark-border shadow-lg flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-center sm:text-left">
             <div>
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                Ready to submit?
+              <span className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 block">
+                Ready to submit? / পরীক্ষা শেষ হয়েছে?
               </span>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] sm:text-xs text-slate-400">
                 You answered {totalAnsweredCount} of {totalQuestionsCount} questions.
               </span>
             </div>
 
             <button
-              onClick={() => {
-                if (confirm('Are you ready to submit your exam paper?')) {
-                  handleSubmitExamFinal();
-                }
-              }}
+              type="button"
+              onClick={() => setShowSubmitModal(true)}
               disabled={isSubmitting}
-              className="px-6 py-3 rounded-xl text-xs sm:text-sm font-black bg-weird-green hover:bg-wintergreen text-slate-950 shadow-md transition-transform active:scale-95 flex items-center gap-2"
+              className="w-full sm:w-auto px-6 py-3 rounded-xl text-xs sm:text-sm font-black bg-weird-green hover:bg-wintergreen text-slate-950 shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4 shrink-0" />
               <span>{isSubmitting ? 'Submitting...' : 'Finalize & Submit Exam'}</span>
             </button>
           </div>
@@ -1112,11 +1172,11 @@ export const StudentExamPortal: React.FC = () => {
           PHASE 3: INSTANT RESULTS & SHAREABLE SCORECARD
          ------------------------------------------------------------- */}
       {phase === 'submitted' && submissionResult && (
-        <div className="max-w-3xl mx-auto pt-8 px-4 sm:px-6 space-y-6">
+        <div className="max-w-3xl mx-auto pt-6 sm:pt-8 px-3 sm:px-6 space-y-6">
           {/* Result Banner */}
-          <div className="bg-white dark:bg-dark-surface rounded-3xl border border-slate-200 dark:border-dark-border p-6 sm:p-8 text-center space-y-4 shadow-xl">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-wintergreen flex items-center justify-center mx-auto">
-              <Award className="w-10 h-10" />
+          <div className="bg-white dark:bg-dark-surface rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-dark-border p-5 sm:p-8 text-center space-y-4 shadow-xl">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-wintergreen flex items-center justify-center mx-auto">
+              <Award className="w-8 h-8 sm:w-10 sm:h-10" />
             </div>
 
             <div>
@@ -1132,7 +1192,7 @@ export const StudentExamPortal: React.FC = () => {
             </div>
 
             {/* Score Display Card */}
-            <div className="p-6 rounded-2xl bg-gradient-to-br from-amber-500/10 via-emerald-500/10 to-sky-500/10 border border-slate-200 dark:border-dark-border max-w-md mx-auto">
+            <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-amber-500/10 via-emerald-500/10 to-sky-500/10 border border-slate-200 dark:border-dark-border max-w-md mx-auto">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
                 Total Obtained Score
               </span>
@@ -1177,9 +1237,17 @@ export const StudentExamPortal: React.FC = () => {
                       try {
                         await submitOnlineExam(submissionResult);
                         setCloudSyncFailed(false);
-                        alert('Cloud sync succeeded! Your score is now saved in the database.');
+                        setCustomAlert({
+                          title: 'Cloud Sync Succeeded!',
+                          message: 'Your exam score has now been safely synchronized and saved to your tutor\'s database.',
+                          type: 'success',
+                        });
                       } catch {
-                        alert('Cloud write still blocked. Please ask tutor to publish firestore.rules.');
+                        setCustomAlert({
+                          title: 'Cloud Write Blocked',
+                          message: 'Cloud sync is still blocked. Please ask your tutor to publish the updated firestore.rules, or take a screenshot of your score.',
+                          type: 'error',
+                        });
                       }
                     }}
                     className="mt-1 px-3 py-1 rounded-lg text-[11px] font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 inline-flex items-center gap-1 transition-colors"
@@ -1197,11 +1265,11 @@ export const StudentExamPortal: React.FC = () => {
                 Share Your Exam Achievement:
               </span>
 
-              <div className="flex items-center justify-center gap-2.5 flex-wrap">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2 sm:gap-2.5">
                 {scorecardImageUrl && (
                   <button
                     onClick={handleDownloadScorecard}
-                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md hover:opacity-90"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md hover:opacity-90 active:scale-95 transition-transform"
                   >
                     <Download className="w-4 h-4" />
                     <span>Download Official Scorecard</span>
@@ -1210,7 +1278,7 @@ export const StudentExamPortal: React.FC = () => {
 
                 <button
                   onClick={handleShareOnWhatsApp}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md"
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md active:scale-95 transition-transform"
                 >
                   <Share2 className="w-4 h-4" />
                   <span>Share on WhatsApp</span>
@@ -1218,7 +1286,7 @@ export const StudentExamPortal: React.FC = () => {
 
                 <button
                   onClick={handleShareOnFacebook}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md"
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md active:scale-95 transition-transform"
                 >
                   <Share2 className="w-4 h-4" />
                   <span>Share on Facebook</span>
@@ -1240,7 +1308,7 @@ export const StudentExamPortal: React.FC = () => {
 
           {/* DETAILED ANSWER KEY REVIEW (If tutor enabled solutions) */}
           {exam.showSolutionsImmediately ? (
-            <div className="bg-white dark:bg-dark-surface rounded-3xl border border-slate-200 dark:border-dark-border p-6 sm:p-8 space-y-6 shadow-xs">
+            <div className="bg-white dark:bg-dark-surface rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-dark-border p-4 sm:p-8 space-y-6 shadow-xs">
               <div className="border-b border-slate-100 dark:border-dark-border pb-3">
                 <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
                   Detailed Answer Review & Solutions
@@ -1397,10 +1465,201 @@ export const StudentExamPortal: React.FC = () => {
           <div className="text-center pt-4">
             <button
               onClick={() => navigate('/')}
-              className="px-6 py-2.5 rounded-xl text-xs font-black bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90"
+              className="w-full sm:w-auto px-8 py-3 rounded-xl text-xs font-black bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 active:scale-95 transition-all shadow-md"
             >
               Back to Home
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* =============================================================
+          CUSTOM MODAL: EXAM SUBMISSION CONFIRMATION
+          (Clean, simple design replacing browser confirm)
+         ============================================================= */}
+      {showSubmitModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => {
+            if (!isSubmitting) setShowSubmitModal(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md bg-white dark:bg-[#18181f] border border-slate-200 dark:border-white/10 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 animate-in zoom-in-95 duration-200 text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-500 block">
+                  Final Submission Confirmation
+                </span>
+                <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white mt-0.5">
+                  Submit Exam Paper?
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSubmitModal(false)}
+                disabled={isSubmitting}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                aria-label="Close dialog"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Answer Status Card */}
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  Questions Answered:
+                </span>
+                <span className="text-xs font-mono font-black text-slate-900 dark:text-white">
+                  {totalAnsweredCount} / {totalQuestionsCount}
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full h-2 bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 rounded-full ${
+                    totalAnsweredCount === totalQuestionsCount ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                  style={{
+                    width: `${totalQuestionsCount > 0 ? (totalAnsweredCount / totalQuestionsCount) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+
+              {/* Unanswered count alert or all answered check */}
+              {totalQuestionsCount - totalAnsweredCount > 0 ? (
+                <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/30 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/50">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+                  <p className="leading-snug">
+                    You have <strong className="font-black">{totalQuestionsCount - totalAnsweredCount}</strong> unanswered {totalQuestionsCount - totalAnsweredCount === 1 ? 'question' : 'questions'}. You can still review them before final submission.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-wintergreen bg-emerald-50/80 dark:bg-emerald-950/30 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-900/50">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
+                  <p className="font-bold">
+                    All questions answered! Ready for auto-grading.
+                  </p>
+                </div>
+              )}
+
+              {/* Remaining time pill if timed */}
+              {exam && exam.durationMinutes > 0 && (
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60 dark:border-white/5">
+                  <span className="text-slate-500">Time Remaining:</span>
+                  <span className="font-mono font-black text-slate-900 dark:text-white flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                    <span>
+                      {String(Math.floor(timeRemainingSeconds / 60)).padStart(2, '0')}:
+                      {String(timeRemainingSeconds % 60).padStart(2, '0')}
+                    </span>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Once you submit, your paper will be instantly graded and recorded in your tutor&apos;s database. You will not be able to change your answers.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col-reverse sm:flex-row items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowSubmitModal(false)}
+                disabled={isSubmitting}
+                className="w-full sm:w-1/2 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-bold border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors"
+              >
+                Keep Reviewing
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSubmitModal(false);
+                  handleSubmitExamFinal();
+                }}
+                disabled={isSubmitting}
+                className="w-full sm:w-1/2 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-black bg-weird-green hover:bg-wintergreen text-slate-950 shadow-md transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <RotateCcw className="w-4 h-4 animate-spin" />
+                    <span>Submitting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    <span>Yes, Submit Now</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =============================================================
+          CUSTOM IN-PORTAL ALERT MODAL
+          (Replaces native alert() for notices, penalties, retry status)
+         ============================================================= */}
+      {customAlert && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => setCustomAlert(null)}
+        >
+          <div
+            className="w-full max-w-sm bg-white dark:bg-[#18181f] border border-slate-200 dark:border-white/10 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-3.5 animate-in zoom-in-95 duration-200 text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                  customAlert.type === 'error'
+                    ? 'bg-red-500/15 text-red-500'
+                    : customAlert.type === 'warning'
+                    ? 'bg-amber-500/15 text-amber-500'
+                    : customAlert.type === 'success'
+                    ? 'bg-emerald-500/15 text-emerald-500'
+                    : 'bg-sky-500/15 text-sky-500'
+                }`}
+              >
+                {customAlert.type === 'error' || customAlert.type === 'warning' ? (
+                  <AlertTriangle className="w-5 h-5" />
+                ) : customAlert.type === 'success' ? (
+                  <CheckCircle2 className="w-5 h-5" />
+                ) : (
+                  <ShieldAlert className="w-5 h-5" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-base font-black text-slate-900 dark:text-white">
+                  {customAlert.title}
+                </h4>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                  {customAlert.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setCustomAlert(null)}
+                className="w-full py-2.5 rounded-xl text-xs font-black bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 transition-opacity"
+              >
+                Understood / ঠিক আছে
+              </button>
+            </div>
           </div>
         </div>
       )}
